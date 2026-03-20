@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCC Amplify — OpenClaw-RL Dashboard</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+  .header{background:linear-gradient(135deg,#1a1f2e,#252d3d);border-bottom:1px solid #2d3748;padding:16px 24px;display:flex;align-items:center;gap:16px}
+  .logo{font-size:22px;font-weight:700;color:#7dd3fc;letter-spacing:-0.5px}
+  .badge{background:#1e3a5f;color:#7dd3fc;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600}
+  .online-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite;margin-left:auto}
+  .offline-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;margin-left:auto}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  .container{max-width:1300px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .card{background:#1a1f2e;border:1px solid #2d3748;border-radius:12px;padding:20px}
+  .card h2{font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:16px}
+  .full-width{grid-column:1/-1}
+  .upload-zone{border:2px dashed #2d3748;border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:all 0.2s}
+  .upload-zone:hover,.upload-zone.drag{border-color:#7dd3fc;background:#1e3a5f22}
+  .upload-zone input{display:none}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all 0.15s}
+  .btn-primary{background:#2563eb;color:#fff}
+  .btn-primary:hover{background:#1d4ed8}
+  .btn-danger{background:#dc2626;color:#fff}
+  .btn-danger:hover{background:#b91c1c}
+  .btn-sm{padding:6px 12px;font-size:12px}
+  .progress-track{background:#1e293b;border-radius:8px;height:8px;overflow:hidden;margin:8px 0}
+  .progress-fill{height:100%;background:linear-gradient(90deg,#2563eb,#7dd3fc);border-radius:8px;transition:width 0.4s ease}
+  .stage-list{display:flex;flex-direction:column;gap:8px}
+  .stage-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;background:#0f1117;border:1px solid #2d3748}
+  .stage-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .dot-pending{background:#475569}
+  .dot-running{background:#f59e0b;animation:pulse 1s infinite}
+  .dot-done{background:#22c55e}
+  .dot-failed{background:#ef4444}
+  .stage-name{font-size:13px;font-weight:500;flex:1}
+  .stage-pct{font-size:12px;color:#64748b}
+  .log-box{background:#0f1117;border:1px solid #2d3748;border-radius:8px;height:220px;overflow-y:auto;padding:12px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6}
+  .log-info{color:#94a3b8}
+  .log-ok{color:#22c55e}
+  .log-warn{color:#f59e0b}
+  .log-err{color:#f87171}
+  .policy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+  .policy-card{background:#0f1117;border:1px solid #2d3748;border-radius:8px;padding:14px}
+  .policy-card h3{font-size:13px;font-weight:600;color:#7dd3fc;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat-row{display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin:4px 0}
+  .stat-val{color:#e2e8f0;font-weight:500}
+  .reward-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .reward-pos{height:6px;background:#22c55e;border-radius:3px}
+  .reward-neg{height:6px;background:#ef4444;border-radius:3px}
+  .sparkline-wrap{margin-top:8px}
+  canvas.sparkline{width:100%;height:40px}
+  .feedback-form{display:flex;flex-direction:column;gap:12px}
+  .form-row{display:flex;gap:10px;flex-wrap:wrap}
+  .form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
+  label{font-size:12px;color:#94a3b8}
+  input,select,textarea{background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:8px 12px;font-size:13px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:#2563eb}
+  .sim-banner{background:#1e3a5f;border:1px solid #2563eb33;border-radius:8px;padding:12px 16px;font-size:13px;color:#7dd3fc;margin-bottom:16px;display:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">MCC Amplify</div>
+  <div class="badge">OpenClaw-RL</div>
+  <div id="server-dot" class="offline-dot" title="Server status"></div>
+</div>
+
+<div class="container">
+
+  <!-- Upload Card -->
+  <div class="card">
+    <h2>Run Pipeline</h2>
+    <div id="sim-banner" class="sim-banner">Demo mode — server offline. Simulating pipeline.</div>
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
+      <input type="file" id="pdf-input" accept=".pdf">
+      <div style="font-size:32px;margin-bottom:8px">📄</div>
+      <div style="font-weight:600;margin-bottom:4px">Drop PDF or click to browse</div>
+      <div style="font-size:12px;color:#64748b">Architectural floor plans · A0–A4</div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+      <input id="project-name" placeholder="Project name (optional)" style="flex:1">
+      <button class="btn btn-primary" onclick="startRun()">▶ Run</button>
+    </div>
+  </div>
+
+  <!-- Progress Card -->
+  <div class="card">
+    <h2>Pipeline Progress</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span id="pct-label" style="font-size:24px;font-weight:700;color:#7dd3fc">0%</span>
+      <span id="status-label" style="font-size:13px;color:#64748b">Idle</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="stage-list" id="stage-list" style="margin-top:16px">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- Live Log -->
+  <div class="card full-width">
+    <h2>Live Log</h2>
+    <div class="log-box" id="log-box"></div>
+  </div>
+
+  <!-- Policies -->
+  <div class="card full-width">
+    <h2>Agent Policies <span style="color:#64748b;font-weight:400;font-size:12px">(auto-updated via RL)</span></h2>
+    <div class="policy-grid" id="policy-grid">
+      <!-- populated by pollPolicies() -->
+    </div>
+  </div>
+
+  <!-- Feedback -->
+  <div class="card">
+    <h2>Human Feedback</h2>
+    <div class="feedback-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Job ID</label>
+          <input id="fb-job" placeholder="auto-filled after run">
+        </div>
+        <div class="form-group">
+          <label>Agent</label>
+          <select id="fb-agent">
+            <option value="pdf_extraction_agent">PDF Extraction</option>
+            <option value="element_detection_agent">Element Detection</option>
+            <option value="grid_detection_agent">Grid Detection</option>
+            <option value="semantic_analysis_agent">Semantic Analysis</option>
+            <option value="revit_build_agent">Revit Build</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Reward</label>
+          <select id="fb-reward">
+            <option value="1">+1 (Good)</option>
+            <option value="0">0 (Neutral)</option>
+            <option value="-1">-1 (Bad)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Hint (optional)</label>
+        <textarea id="fb-hint" rows="2" placeholder="You should have… / Next time…"></textarea>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="sendFeedback()" style="align-self:flex-start">Submit Feedback</button>
+    </div>
+  </div>
+
+  <!-- Replay Buffer -->
+  <div class="card">
+    <h2>Replay Buffer Stats</h2>
+    <div id="buffer-stats" style="font-size:13px;color:#64748b">Loading…</div>
+    <div style="margin-top:16px">
+      <h2 style="margin-bottom:8px">Reward History</h2>
+      <div class="sparkline-wrap"><canvas id="sparkline" class="sparkline"></canvas></div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+const BASE = 'http://localhost:8001';
+let currentJobId = null;
+let rewardHistory = [];
+let sseSource = null;
+let simMode = false;
+
+const STAGES = [
+  {id:'pdf_extraction',      label:'PDF Extraction'},
+  {id:'element_detection',   label:'Element Detection'},
+  {id:'grid_detection',      label:'Grid Detection'},
+  {id:'semantic_analysis',   label:'Semantic Analysis'},
+  {id:'revit_build',         label:'Revit Build'},
+];
+
+// ── Render stage list ──────────────────────────────────────────────────────────
+function renderStages(stageStates={}) {
+  const el = document.getElementById('stage-list');
+  el.innerHTML = STAGES.map(s => {
+    const st = stageStates[s.id] || 'pending';
+    const dot = `dot-${st}`;
+    const pct = st==='done'?'✓' : st==='running'?'…' : st==='failed'?'✗':'';
+    return `<div class="stage-item">
+      <div class="stage-dot ${dot}"></div>
+      <div class="stage-name">${s.label}</div>
+      <div class="stage-pct">${pct}</div>
+    </div>`;
+  }).join('');
+}
+renderStages();
+
+// ── Logging ────────────────────────────────────────────────────────────────────
+function log(msg, cls='log-info') {
+  const box = document.getElementById('log-box');
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Server health check ────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${BASE}/health`, {signal: AbortSignal.timeout(3000)});
+    const d = await r.json();
+    document.getElementById('server-dot').className = 'online-dot';
+    document.getElementById('server-dot').title = `Online · model: ${d.model}`;
+    document.getElementById('sim-banner').style.display = 'none';
+    simMode = false;
+  } catch {
+    document.getElementById('server-dot').className = 'offline-dot';
+    document.getElementById('server-dot').title = 'Offline';
+    document.getElementById('sim-banner').style.display = 'block';
+    simMode = true;
+  }
+}
+checkHealth();
+setInterval(checkHealth, 8000);
+
+// ── Progress update ────────────────────────────────────────────────────────────
+function updateProgress(pct, status, stageStates={}) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('pct-label').textContent = pct + '%';
+  document.getElementById('status-label').textContent = status;
+  renderStages(stageStates);
+}
+
+// ── Start run ──────────────────────────────────────────────────────────────────
+async function startRun() {
+  const fileInput = document.getElementById('pdf-input');
+  if (!simMode && !fileInput.files.length) { alert('Select a PDF first.'); return; }
+
+  if (simMode) { runSimulation(); return; }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  log('Uploading PDF…');
+  try {
+    const r = await fetch(`${BASE}/run`, {method:'POST', body: formData});
+    const d = await r.json();
+    currentJobId = d.job_id;
+    document.getElementById('fb-job').value = currentJobId;
+    log(`Job started: ${currentJobId}`, 'log-ok');
+    subscribeSSE(currentJobId);
+  } catch(e) {
+    log(`Error: ${e.message}`, 'log-err');
+  }
+}
+
+// ── SSE subscription ───────────────────────────────────────────────────────────
+function subscribeSSE(jobId) {
+  if (sseSource) sseSource.close();
+  sseSource = new EventSource(`${BASE}/run/stream/${jobId}`);
+  const stageStates = {};
+
+  sseSource.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    const pct = ev.progress || 0;
+    const stage = ev.stage || '';
+    if (stage) stageStates[stage] = ev.type==='progress' ? 'running' : 'done';
+    if (ev.type==='completed') Object.keys(stageStates).forEach(k=>stageStates[k]='done');
+
+    updateProgress(pct, ev.message||ev.type, stageStates);
+    log(`[${stage||ev.type}] ${ev.message||JSON.stringify(ev).slice(0,80)}`,
+        ev.type==='failed'?'log-err':ev.type==='completed'?'log-ok':'log-info');
+
+    if (ev.type==='completed'||ev.type==='failed') {
+      sseSource.close();
+      pollPolicies();
+      pollBuffer();
+    }
+  };
+  sseSource.onerror = () => log('SSE connection error', 'log-warn');
+}
+
+// ── Demo simulation ────────────────────────────────────────────────────────────
+function runSimulation() {
+  currentJobId = 'demo-' + Date.now();
+  document.getElementById('fb-job').value = currentJobId;
+  log('Demo simulation started (server offline)', 'log-warn');
+  const stageStates = {};
+  let i = 0;
+  const steps = [
+    [10,'pdf_extraction','PDF extracted — 842 paths, scale 1:100'],
+    [35,'element_detection','YOLO detected 24 walls, 8 doors, 12 windows'],
+    [55,'grid_detection','Grid: 6×4 bays, 6000mm spacing, confidence=high'],
+    [75,'semantic_analysis','Semantic: commercial concrete building'],
+    [95,'revit_build','Revit model built — 44 elements placed'],
+    [100,'','Pipeline complete'],
+  ];
+  const interval = setInterval(() => {
+    if (i >= steps.length) { clearInterval(interval); return; }
+    const [pct, stage, msg] = steps[i++];
+    if (stage) stageStates[stage] = i >= steps.length ? 'done' : 'running';
+    updateProgress(pct, msg, {...stageStates, ...(stage?{[stage]:'done'}:{})});
+    log(msg, pct===100?'log-ok':'log-info');
+    rewardHistory.push(Math.random()*2-1);
+    drawSparkline();
+    if (pct===100) { simulatePolicies(); simulateBuffer(); }
+  }, 1200);
+}
+
+// ── Policy polling ─────────────────────────────────────────────────────────────
+async function pollPolicies() {
+  try {
+    const r = await fetch(`${BASE}/policies`);
+    const d = await r.json();
+    renderPolicies(d);
+  } catch(e) {
+    log('Could not load policies: '+e.message,'log-warn');
+  }
+}
+setInterval(pollPolicies, 10000);
+pollPolicies();
+
+function renderPolicies(data) {
+  const grid = document.getElementById('policy-grid');
+  grid.innerHTML = Object.entries(data).map(([name, p]) => {
+    const reward = p.cumulative_reward || 0;
+    const posW = Math.min(Math.max(reward*20, 0),100);
+    const negW = Math.min(Math.max(-reward*20, 0),100);
+    return `<div class="policy-card">
+      <h3>${name.replace('_agent','').replace(/_/g,' ')}</h3>
+      <div class="stat-row"><span>Steps</span><span class="stat-val">${p.steps||0}</span></div>
+      <div class="stat-row"><span>Reward</span><span class="stat-val">${reward.toFixed(2)}</span></div>
+      <div class="stat-row"><span>Learned</span><span class="stat-val">${p.has_learned_guidance?'✓ Yes':'—'}</span></div>
+      <div class="reward-bar">
+        <div class="reward-pos" style="width:${posW}%"></div>
+        <div class="reward-neg" style="width:${negW}%"></div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="margin-top:10px;width:100%" onclick="resetPolicy('${name}')">Reset Policy</button>
+    </div>`;
+  }).join('');
+}
+
+function simulatePolicies() {
+  const fake = {
+    pdf_extraction_agent:   {steps:3, cumulative_reward:2.1,  has_learned_guidance:true},
+    element_detection_agent:{steps:3, cumulative_reward:1.5,  has_learned_guidance:false},
+    grid_detection_agent:   {steps:3, cumulative_reward:-0.5, has_learned_guidance:true},
+    semantic_analysis_agent:{steps:3, cumulative_reward:3.0,  has_learned_guidance:true},
+    revit_build_agent:      {steps:3, cumulative_reward:0.0,  has_learned_guidance:false},
+  };
+  renderPolicies(fake);
+}
+
+async function resetPolicy(name) {
+  if (!confirm(`Reset learned guidance for ${name}?`)) return;
+  try {
+    await fetch(`${BASE}/policies/${name}/reset`, {method:'POST'});
+    log(`Policy reset: ${name}`,'log-warn');
+    pollPolicies();
+  } catch(e) { log('Reset failed: '+e.message,'log-err'); }
+}
+
+// ── Replay buffer polling ──────────────────────────────────────────────────────
+async function pollBuffer() {
+  try {
+    const r = await fetch(`${BASE}/replay-buffer/stats`);
+    const d = await r.json();
+    renderBuffer(d);
+    const agents = Object.values(d.by_agent||{});
+    if (agents.length) rewardHistory.push(agents.reduce((s,a)=>s+a.reward,0)/agents.length);
+    drawSparkline();
+  } catch(e) {}
+}
+setInterval(pollBuffer, 12000);
+pollBuffer();
+
+function renderBuffer(d) {
+  const el = document.getElementById('buffer-stats');
+  const byAgent = d.by_agent || {};
+  let html = `<div class="stat-row"><span>Total interactions</span><span class="stat-val">${d.total||0}</span></div>`;
+  for (const [name, stats] of Object.entries(byAgent)) {
+    html += `<div class="stat-row"><span>${name.replace('_agent','')}</span>
+      <span class="stat-val">${stats.count} · Σ${stats.reward.toFixed(1)}</span></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function simulateBuffer() {
+  renderBuffer({total:15, by_agent:{
+    pdf_extraction_agent:{count:3,reward:2.1},
+    element_detection_agent:{count:3,reward:1.5},
+    grid_detection_agent:{count:3,reward:-0.5},
+    semantic_analysis_agent:{count:3,reward:3.0},
+    revit_build_agent:{count:3,reward:0.0},
+  }});
+  for(let i=0;i<8;i++) rewardHistory.push(Math.random()*2-1);
+  drawSparkline();
+}
+
+// ── Sparkline canvas chart ────────────────────────────────────────────────────
+function drawSparkline() {
+  const canvas = document.getElementById('sparkline');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 300;
+  const H = 40;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.clearRect(0,0,W,H);
+
+  const data = rewardHistory.slice(-40);
+  if (data.length < 2) return;
+
+  const min = -1, max = 1;
+  const toY = v => H - ((v - min)/(max - min)) * H;
+  const toX = i => (i/(data.length-1)) * W;
+
+  // Zero line
+  ctx.strokeStyle = '#2d3748';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, toY(0)); ctx.lineTo(W, toY(0));
+  ctx.stroke();
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#2563eb55'); grad.addColorStop(1,'#2563eb00');
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(data[0]));
+  data.forEach((v,i) => ctx.lineTo(toX(i), toY(v)));
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = '#7dd3fc'; ctx.lineWidth = 1.5;
+  data.forEach((v,i) => i===0 ? ctx.moveTo(toX(0),toY(v)) : ctx.lineTo(toX(i),toY(v)));
+  ctx.stroke();
+}
+
+// ── Feedback submission ────────────────────────────────────────────────────────
+async function sendFeedback() {
+  const body = {
+    job_id:     document.getElementById('fb-job').value,
+    agent_name: document.getElementById('fb-agent').value,
+    reward:     parseFloat(document.getElementById('fb-reward').value),
+    hint:       document.getElementById('fb-hint').value || null,
+  };
+  if (!body.job_id) { alert('Job ID required'); return; }
+  try {
+    const r = await fetch(`${BASE}/feedback`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    log(`Feedback submitted: ${d.message}`, 'log-ok');
+    pollPolicies();
+  } catch(e) {
+    log(`Feedback error: ${e.message}`, 'log-err');
+  }
+}
+
+// ── Drag & drop ────────────────────────────────────────────────────────────────
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.pdf')) {
+    const dt = new DataTransfer(); dt.items.add(f);
+    document.getElementById('pdf-input').files = dt.files;
+    log(`PDF selected: ${f.name}`);
+  }
+});
+</script>
+</body>
+</html>
