@@ -393,11 +393,12 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str, debug: bool = F
 
     # /no_think disables qwen3's chain-of-thought mode, which otherwise consumes the
     # entire token budget inside <think>…</think> and leaves no JSON output.
-    no_think = "/no_think\n" if "qwen3" in model.lower() else ""
+    # IMPORTANT: /no_think must appear at the END of the user message for qwen3 models.
+    no_think = "\n/no_think" if "qwen3" in model.lower() else ""
     raw    = _ollama({"model": model, "stream": False,
-                      "options": {"temperature": 0.2, "num_predict": 4096},
+                      "options": {"temperature": 0.2, "num_predict": 4096, "num_ctx": 8192},
                       "messages": [{"role": "system", "content": _SYSTEM_DETECT},
-                                   {"role": "user", "content": no_think + preamble + _USER_DETECT,
+                                   {"role": "user", "content": preamble + _USER_DETECT + no_think,
                                     "images": [b64 for _, b64 in refs] + [_pil_to_b64(tile)]}]})
     if debug:
         print(f"\n[DEBUG tile {info.index}] raw response:\n{raw}\n")
