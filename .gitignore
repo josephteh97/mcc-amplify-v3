@@ -1,0 +1,5 @@
+***.pyc
+agent.cpython-***.pyc
+agent.cpython-310.pyc
+pdf_detection_agent/__pycache__/agent.cpython-310.pyc
+pdf_detection_agent/__pycache__/agent.cpython-312.pyc

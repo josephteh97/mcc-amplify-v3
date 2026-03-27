@@ -13,14 +13,17 @@ Columns are the load-bearing pillars of a concrete building — they carry the
 weight of every floor and roof above. Without them, the structure cannot stand.
 
 ## Column shapes
-| Shape          | Description                                                      |
-|----------------|------------------------------------------------------------------|
-| `square`       | Filled black/dark square at a grid intersection                  |
-| `rectangle`    | Filled dark rectangle (non-square) at a grid point               |
-| `round`        | Filled solid circle (round column)                               |
-| `i_beam`       | I-beam or H-section profile symbol, no outer casing             |
-| `square_round` | Round column enclosed in a square concrete casing                |
-| `i_square`     | I-beam column enclosed in a square concrete casing               |
+Columns may be drawn **solid filled, outlined/hollow with thick border, or cross-hatched** —
+all are valid. Column ID labels nearby (C1, C2, H-C1, H-C9…) are a strong indicator.
+
+| Shape          | Description                                                              |
+|----------------|--------------------------------------------------------------------------|
+| `square`       | Square shape (filled, outlined, or hatched) at a structural position     |
+| `rectangle`    | Non-square rectangle (filled, outlined, or hatched)                      |
+| `round`        | Circular column — NOT a grid balloon with an axis label                  |
+| `i_beam`       | I-beam or H-section profile, no outer casing                             |
+| `square_round` | Round column inside a square concrete casing                             |
+| `i_square`     | I-beam column inside a square concrete casing                            |
 
 Some columns have a footing (wider base) below them — **ignore the footing**
 and draw the bounding box around the column section only.

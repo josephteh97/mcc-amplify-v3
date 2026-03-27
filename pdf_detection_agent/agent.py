@@ -13,6 +13,7 @@ Single-file agent: PDF tiling, Ollama vision detection, SQLite memory, agentic l
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import os
@@ -30,16 +31,17 @@ from PIL import Image, ImageDraw
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-DEFAULT_MODEL   = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
-TILE_SIZE       = 1280
-TILE_STEP       = 1080          # 200 px overlap
-RENDER_DPI      = 150
-MAX_TOOL_LOOPS  = 8
-SKILLS_DIR      = Path(__file__).parent / "skills"
-DB_PATH         = Path(__file__).parent / "detections.db"
-GT_DIR          = Path(__file__).parent / "ground_truth" / "columns"
-VALID_SHAPES    = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
+OLLAMA_BASE_URL  = os.getenv("OLLAMA_URL",   "http://localhost:11434")
+DEFAULT_MODEL    = os.getenv("OLLAMA_MODEL", "moondream:latest")
+TILE_SIZE        = 1280
+TILE_STEP        = 1080          # 200 px overlap
+RENDER_DPI       = 150
+MAX_TOOL_LOOPS   = 8
+SKILLS_DIR       = Path(__file__).parent / "skills"
+DB_PATH          = Path(__file__).parent / "detections.db"
+GT_DIR           = Path(__file__).parent / "ground_truth" / "columns"
+MEMORY_JSON_PATH = Path(__file__).parent / "memory.json"
+VALID_SHAPES     = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -72,10 +74,35 @@ def _db() -> sqlite3.Connection:
             tile_index INTEGER,
             page_num   INTEGER
         );
+        CREATE TABLE IF NOT EXISTS corrections (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            tile_hash  TEXT NOT NULL,
+            file_path  TEXT,
+            page_num   INTEGER,
+            tile_index INTEGER,
+            x_offset   INTEGER,
+            y_offset   INTEGER,
+            action     TEXT NOT NULL,
+            shape      TEXT,
+            bbox_x1    REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
+            notes      TEXT,
+            timestamp  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS tile_notes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            tile_hash   TEXT NOT NULL,
+            file_path   TEXT,
+            page_num    INTEGER,
+            tile_index  INTEGER,
+            description TEXT,
+            timestamp   TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_col_run   ON columns(run_id);
         CREATE INDEX IF NOT EXISTS idx_col_shape ON columns(shape);
         CREATE INDEX IF NOT EXISTS idx_col_conf  ON columns(confidence);
         CREATE INDEX IF NOT EXISTS idx_run_file  ON runs(file_path);
+        CREATE INDEX IF NOT EXISTS idx_corr_hash ON corrections(tile_hash);
+        CREATE INDEX IF NOT EXISTS idx_tnotes_hash ON tile_notes(tile_hash);
     """)
     return con
 
@@ -163,6 +190,139 @@ def memory_clear(run_id: str | None = None) -> dict:
             r = con.execute("DELETE FROM runs").rowcount
     con.close()
     return {"runs_deleted": r, "columns_deleted": c}
+
+
+# ── memory.json (fast per-tile correction cache) ──────────────────────────────
+
+def _mjson_load() -> dict:
+    """Load memory.json; return empty structure if missing."""
+    if MEMORY_JSON_PATH.exists():
+        try:
+            return json.loads(MEMORY_JSON_PATH.read_text())
+        except Exception:
+            pass
+    return {"version": 1, "corrections": {}}
+
+
+def _mjson_save(data: dict) -> None:
+    MEMORY_JSON_PATH.write_text(json.dumps(data, indent=2))
+
+
+# ── Tile hashing ──────────────────────────────────────────────────────────────
+
+def _tile_hash(img: Image.Image) -> str:
+    """Stable 16-char hash of a tile (resize to 64×64 first for robustness)."""
+    buf = io.BytesIO()
+    img.resize((64, 64), Image.LANCZOS).save(buf, format="PNG")
+    return hashlib.md5(buf.getvalue()).hexdigest()[:16]
+
+
+# ── Human corrections / feedback ─────────────────────────────────────────────
+
+def add_correction(
+    tile_hash: str,
+    action: str,                  # 'confirm' | 'reject' | 'add'
+    shape: str | None = None,
+    bbox: list[float] | None = None,  # tile-space [x1,y1,x2,y2]
+    notes: str = "",
+    file_path: str = "",
+    page_num: int = 0,
+    tile_index: int = 0,
+    x_offset: int = 0,
+    y_offset: int = 0,
+) -> dict:
+    """
+    Record a human correction for a tile.
+
+    action='confirm' — an existing detection is correct
+    action='reject'  — an existing detection is a false positive
+    action='add'     — a missed column; supply bbox + shape
+
+    Persists to both SQLite (corrections table) and memory.json.
+    """
+    if action not in ("confirm", "reject", "add"):
+        return {"error": "action must be confirm | reject | add"}
+    ts = datetime.now().isoformat()
+    bb = bbox or [0.0, 0.0, 0.0, 0.0]
+
+    # SQLite
+    con = _db()
+    with con:
+        con.execute(
+            "INSERT INTO corrections "
+            "(tile_hash,file_path,page_num,tile_index,x_offset,y_offset,"
+            " action,shape,bbox_x1,bbox_y1,bbox_x2,bbox_y2,notes,timestamp)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (tile_hash, file_path, page_num, tile_index,
+             x_offset, y_offset, action, shape,
+             bb[0], bb[1], bb[2], bb[3], notes, ts),
+        )
+    con.close()
+
+    # memory.json cache
+    data = _mjson_load()
+    data["corrections"].setdefault(tile_hash, []).append(
+        {"action": action, "shape": shape, "bbox": bb, "notes": notes, "timestamp": ts}
+    )
+    _mjson_save(data)
+    return {"ok": True, "tile_hash": tile_hash, "action": action}
+
+
+def list_corrections(tile_hash: str | None = None, file_path: str | None = None,
+                     limit: int = 100) -> list[dict]:
+    """List recorded human corrections, optionally filtered by tile or file."""
+    clauses, params = [], []
+    if tile_hash:
+        clauses.append("tile_hash = ?"); params.append(tile_hash)
+    if file_path:
+        clauses.append("file_path LIKE ?"); params.append(f"%{file_path}%")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    con  = _db()
+    rows = [dict(r) for r in con.execute(
+        f"SELECT * FROM corrections {where} ORDER BY timestamp DESC LIMIT ?",
+        params + [limit]
+    ).fetchall()]
+    con.close()
+    return rows
+
+
+def search_similar_tiles(description: str, limit: int = 5) -> list[dict]:
+    """Simple keyword search over stored tile descriptions (lightweight vector search)."""
+    words   = [w.lower() for w in re.findall(r"\w{4,}", description)]
+    if not words:
+        return []
+    clauses = [f"description LIKE ?" for _ in words]
+    params  = [f"%{w}%" for w in words]
+    con  = _db()
+    rows = [dict(r) for r in con.execute(
+        f"SELECT DISTINCT tile_hash, file_path, page_num, tile_index, description "
+        f"FROM tile_notes WHERE {' OR '.join(clauses)} LIMIT ?",
+        params + [limit]
+    ).fetchall()]
+    con.close()
+    return rows
+
+
+def _get_tile_context(tile_hash: str) -> str:
+    """Build few-shot correction context to inject into the detection prompt."""
+    data = _mjson_load()
+    corrections = data["corrections"].get(tile_hash, [])
+    if not corrections:
+        return ""
+    confirmed = [c for c in corrections if c["action"] in ("confirm", "add")]
+    rejected  = [c for c in corrections if c["action"] == "reject"]
+    lines = ["\n## Previous human corrections for this exact tile:"]
+    if confirmed:
+        lines.append("CONFIRMED/ADDED columns (these are real):")
+        for c in confirmed:
+            lines.append(f"  - {c['shape']} column at bbox {c['bbox']}"
+                         + (f"  ({c['notes']})" if c.get("notes") else ""))
+    if rejected:
+        lines.append("REJECTED detections (false positives — NOT columns):")
+        for c in rejected:
+            lines.append(f"  - Previously detected {c.get('shape','?')} at {c['bbox']} was WRONG")
+    lines.append("Use these as ground truth but also detect any additional columns.\n")
+    return "\n".join(lines)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -317,47 +477,57 @@ def references_reload() -> list[str]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _SYSTEM_DETECT = """\
-You are an expert architectural floor plan analyst specialised in detecting structural columns.
+You are an expert structural engineer reading architectural floor plan drawings.
 
-## How to read a floor plan
-- **Grid lines** are thin dash-dot CENTRELINES running horizontally and vertically.
-- **Grid balloons** are small OPEN circles at the ends of grid lines containing alphanumeric
-  labels (A, B, C... / 1, 2, 3...). Do NOT confuse them with columns.
-- **Structural columns** appear at or near the INTERSECTIONS of grid lines as small,
-  solid, filled geometric shapes.
+Columns are the load-bearing concrete pillars that support every floor and roof above.
+They are the most critical structural element in the building.
+
+## How columns appear in floor plans
+Columns appear at or near **beam/grid intersections** as small geometric shapes.
+They may be drawn as:
+- **Solid filled** black/dark shapes (fully shaded)
+- **Outlined hollow** squares or rectangles with a bold/thick border (very common in CAD drawings)
+- **Cross-hatched** rectangles
+They are often labelled nearby with IDs like C1, C2, H-C1, H-C9, etc.
+
+## Grid lines & balloons
+Grid lines are thin dash-dot centrelines. **Grid balloons** are small open circles at
+grid line ends carrying axis labels (A, B, 1, 2...). Do NOT confuse them with columns.
 
 ## Column shapes
-| Shape        | Description                                                      |
-|--------------|------------------------------------------------------------------|
-| square       | Small filled black/dark square at a grid intersection            |
-| rectangle    | Filled dark rectangle (non-square) at a grid point               |
-| round        | Filled solid circle/round column                                 |
-| i_beam       | I-beam or H-section profile symbol (no outer casing)             |
-| square_round | Round column enclosed in a square concrete casing                |
-| i_square     | I-beam column enclosed in a square concrete casing               |
+| Shape        | Description                                                              |
+|--------------|--------------------------------------------------------------------------|
+| square       | Square shape (filled, outlined, or hatched) at a structural position     |
+| rectangle    | Non-square rectangle (filled, outlined, or hatched) at a structural point|
+| round        | Circular column (filled or outlined circle, NOT a grid balloon)          |
+| i_beam       | I-beam or H-section profile symbol, no outer casing                     |
+| square_round | Round column inside a square concrete casing                             |
+| i_square     | I-beam column inside a square concrete casing                            |
 
 ## What is NOT a column
-- Open/hollow circles (grid balloons)
-- Dimension lines, arrowheads, wall segments, door arcs
+- Grid balloons (open circles at grid line ends with alphanumeric axis labels)
+- Dimension lines, arrowheads, wall lines, door arcs
 - North arrows, scale bars, title block content
+- Room/slab labels (SB1, SB2, RCB, NSP...)
 """
 
 _USER_DETECT = """\
-Examine this floor plan tile carefully and detect ALL structural columns.
+Examine this floor plan tile and detect ALL structural columns.
 
-Structural columns are small solid filled geometric shapes. They are commonly found at or near \
-grid line intersections but may also appear along walls or independently. Do not require \
-visible grid lines — focus on identifying the filled shapes themselves.
+Columns sit at beam or grid intersections. They may be solid filled, outlined/hollow \
+with a thick border, or cross-hatched — all are valid. Column ID labels nearby \
+(C1, C2, H-C1, H-C9, etc.) are a strong indicator.
 
 Look for:
-- Small filled black/dark squares or rectangles
-- Small solid filled circles/round columns
-- I-beam or H-section profile symbols (bare or inside a square casing)
-- Round columns inside a square concrete casing
-- Any small solid geometric shape that represents a load-bearing column
+- Small squares or rectangles (filled OR outlined with thick border) at structural positions
+- Circular columns (filled or outlined — but NOT open grid balloons with axis labels)
+- I-beam or H-section profile symbols
+- Any column shape inside a square casing (square_round, i_square)
+
+A tile may contain MANY columns — report every single one. Do not stop after finding one.
 
 For every column found output:
-  "bbox": [x1, y1, x2, y2]  — pixel bounding box within THIS tile
+  "bbox": [x1, y1, x2, y2]  — pixel coordinates within this 640×640 tile
   "shape": "square" | "rectangle" | "round" | "i_beam" | "square_round" | "i_square"
   "confidence": float 0.0–1.0
   "notes": one-line observation
@@ -365,16 +535,37 @@ For every column found output:
 Respond ONLY with valid JSON — no markdown fences, no extra text:
 {
   "columns": [
-    { "bbox": [x1, y1, x2, y2], "shape": "square", "confidence": 0.95, "notes": "..." }
+    { "bbox": [x1, y1, x2, y2], "shape": "square",     "confidence": 0.92, "notes": "brief note" },
+    { "bbox": [x1, y1, x2, y2], "shape": "rectangle",  "confidence": 0.85, "notes": "brief note" }
   ],
-  "tile_notes": "brief description"
+  "tile_notes": "brief description of tile"
 }
 
+Replace x1,y1,x2,y2 with the ACTUAL pixel coordinates you observe.
 If no columns are found: {"columns": [], "tile_notes": "no columns detected"}
 """
 
 
-def _ollama(payload: dict, timeout: int = 180) -> str:
+_USER_DETECT_MOONDREAM = """\
+This is a structural engineering floor plan. I need to find ALL structural columns.
+
+Columns are small geometric symbols at beam/grid intersections:
+- Filled solid black squares or rectangles
+- Outlined/hollow squares or rectangles with thick borders
+- Filled or outlined circles (NOT the open circles at grid line ends with letter/number labels)
+- I-shaped or H-shaped cross-sections
+- Labels nearby: C1, C2, H-C1, H-C9 etc.
+
+For EACH column you find, describe its location using grid position (e.g. "top-left quarter", "center", "right edge") AND approximate pixel position in this 640x640 image.
+
+Respond as JSON only:
+{"columns": [{"shape": "square|rectangle|round|i_beam|square_round|i_square", "position": "description", "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0}], "tile_notes": "brief description"}
+
+If no columns: {"columns": [], "tile_notes": "no columns visible"}
+"""
+
+
+def _ollama(payload: dict, timeout: int = 600) -> str:
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(
         f"{OLLAMA_BASE_URL}/api/chat", data=data,
@@ -389,44 +580,135 @@ def _ollama(payload: dict, timeout: int = 180) -> str:
 
 def _parse_json(text: str) -> dict:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    # Remove trailing "..." continuation markers from truncated moondream output
+    text = re.sub(r",\s*\.\.\.\s*(\]|\})", r"\1", text)
+    text = re.sub(r"\.\.\.\s*$", "", text).strip()
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return {"columns": parsed}
+        return parsed
     except json.JSONDecodeError:
+        # Try to extract a complete JSON object
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if m:
             try:
                 return json.loads(m.group())
             except json.JSONDecodeError:
                 pass
+        # Try to extract a complete JSON array (moondream returns bare array)
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if m:
+            try:
+                return {"columns": json.loads(m.group())}
+            except json.JSONDecodeError:
+                pass
+        # Last resort: extract all complete {...} objects from a truncated array
+        items = []
+        for m in re.finditer(r"\{[^{}]+\}", text, re.DOTALL):
+            try:
+                items.append(json.loads(m.group()))
+            except json.JSONDecodeError:
+                pass
+        if items:
+            return {"columns": items}
     return {"columns": [], "tile_notes": f"parse_error: {text[:200]}"}
 
 
-def _detect_tile(tile: Image.Image, info: _TileInfo, model: str, debug: bool = False) -> list[dict]:
-    refs     = _load_references()
-    preamble = "Reference examples of real structural columns from floor plans:\n"
-    for i, (shape, _) in enumerate(refs, 1):
-        preamble += f"  Image {i}: {shape} column\n"
-    preamble += f"\nImage {len(refs) + 1} is the floor plan tile to analyse.\n\n"
+def _save_tile_note(tile_hash: str, description: str, info: _TileInfo, file_path: str) -> None:
+    """Persist tile description for similarity search."""
+    con = _db()
+    with con:
+        con.execute(
+            "INSERT INTO tile_notes (tile_hash,file_path,page_num,tile_index,description,timestamp)"
+            " VALUES (?,?,?,?,?,?)",
+            (tile_hash, file_path, info.page_num, info.index,
+             description, datetime.now().isoformat()),
+        )
+    con.close()
 
-    # /no_think disables qwen3's chain-of-thought mode, which otherwise consumes the
-    # entire token budget inside <think>…</think> and leaves no JSON output.
-    # IMPORTANT: /no_think must appear at the END of the user message for qwen3 models.
-    no_think = "\n/no_think" if "qwen3" in model.lower() else ""
-    raw    = _ollama({"model": model, "stream": False,
-                      "options": {"temperature": 0.2, "num_predict": 4096, "num_ctx": 8192},
-                      "messages": [{"role": "system", "content": _SYSTEM_DETECT},
-                                   {"role": "user", "content": preamble + _USER_DETECT + no_think,
-                                    "images": [b64 for _, b64 in refs] + [_pil_to_b64(tile)]}]})
+
+def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
+                 debug: bool = False, file_path: str = "") -> list[dict]:
+    # Crop to actual content (strips white padding on edge tiles) then resize to 640×640.
+    # This ensures the model's coordinate space maps fully onto real floor-plan content.
+    content   = tile.crop((0, 0, info.width, info.height))
+    send_tile = content.resize((640, 640), Image.LANCZOS)
+    tile_hash = _tile_hash(send_tile)
+    correction = _get_tile_context(tile_hash)
+
+    is_moondream = "moondream" in model.lower()
+    is_qwen3_vl  = "qwen3-vl" in model.lower()
+
+    if is_moondream:
+        # Moondream: 2048 total context. A 640×640 CLIP image ≈ 2000 tokens — no room.
+        # Send at 320×320 (~500 tokens image) to leave ~1500 tokens for prompt + JSON output.
+        moon_tile  = send_tile.resize((320, 320), Image.LANCZOS)
+        user_prompt = _USER_DETECT_MOONDREAM
+        if correction:
+            user_prompt = correction + "\n" + user_prompt
+        raw = _ollama({"model": model, "stream": False,
+                       "options": {"temperature": 0.1, "num_predict": 1024},
+                       "messages": [{"role": "user",
+                                     "content": user_prompt,
+                                     "images": [_pil_to_b64(moon_tile)]}]})
+    else:
+        # qwen-vl family: system prompt + optional refs + /no_think
+        use_refs = is_qwen3_vl
+        if use_refs:
+            refs      = _load_references()
+            preamble  = "Reference examples of real structural columns from floor plans:\n"
+            for i, (shape, _) in enumerate(refs, 1):
+                preamble += f"  Image {i}: {shape} column\n"
+            preamble += f"\nImage {len(refs) + 1} is the floor plan tile to analyse.\n\n"
+            ref_images = [b64 for _, b64 in refs]
+        else:
+            preamble   = ""
+            ref_images = []
+
+        no_think   = "\n/no_think" if "qwen3" in model.lower() else ""
+        user_msg   = preamble + (correction or "") + _USER_DETECT + no_think
+        raw = _ollama({"model": model, "stream": False,
+                       "options": {"temperature": 0.2, "num_predict": 2048, "num_ctx": 8192},
+                       "messages": [{"role": "system", "content": _SYSTEM_DETECT},
+                                    {"role": "user", "content": user_msg,
+                                     "images": ref_images + [_pil_to_b64(send_tile)]}]})
+
     if debug:
         print(f"\n[DEBUG tile {info.index}] raw response:\n{raw}\n")
+
+    parsed = _parse_json(raw)
+    # Persist tile description for similarity search
+    tile_note = parsed.get("tile_notes", "")
+    if tile_note and tile_note != "no columns detected":
+        _save_tile_note(tile_hash, tile_note, info, file_path)
+
     dets = []
-    for col in _parse_json(raw).get("columns", []):
+    for col in parsed.get("columns", []):
         bbox = col.get("bbox", [])
         if len(bbox) != 4:
             continue
-        shape = col.get("shape", "square")
-        if shape not in VALID_SHAPES:
-            shape = "square"
+        # If moondream returns normalized 0-1 coordinates, convert to 640px space first
+        if all(isinstance(v, (int, float)) and v <= 1.0 for v in bbox):
+            bbox = [v * 640 for v in bbox]
+        # Scale from 640px space back to actual content dimensions (strips padding artefacts)
+        sx   = info.width  / 640
+        sy   = info.height / 640
+        bbox = [bbox[0]*sx, bbox[1]*sy, bbox[2]*sx, bbox[3]*sy]
+        # Handle pipe-separated / dash-variant shapes → normalise to VALID_SHAPES
+        shape_raw = col.get("shape", "square")
+        _shape_alias = {
+            "i-beam": "i_beam", "ibeam": "i_beam", "i beam": "i_beam",
+            "h-beam": "i_beam", "hbeam": "i_beam", "h beam": "i_beam",
+            "circle": "round",  "circular": "round",
+            "rect": "rectangle",
+        }
+        shape = next(
+            (s.strip() for s in re.split(r"[|/,]", str(shape_raw).lower())
+             if _shape_alias.get(s.strip(), s.strip()) in VALID_SHAPES),
+            "square"
+        )
+        shape = _shape_alias.get(shape, shape)
         try:
             conf = float(col.get("confidence", 0.5))
             conf = conf / 100.0 if conf > 1.0 else conf
@@ -434,7 +716,9 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str, debug: bool = F
         except (TypeError, ValueError):
             conf = 0.5
         dets.append({"bbox_tile": bbox, "bbox_page": _to_page_bbox(bbox, info),
-                     "shape": shape, "confidence": conf, "notes": col.get("notes", ""),
+                     "shape": shape, "confidence": conf,
+                     "notes": col.get("notes", col.get("position", "")),
+                     "tile_hash": tile_hash,
                      "tile_index": info.index, "page_num": info.page_num})
     return dets
 
@@ -495,7 +779,8 @@ def detect_file(
         if verbose:
             print(f"  Tile {i+1}/{len(tiles)}  offset=({tile_info.x_offset},{tile_info.y_offset})", end="\r")
         try:
-            all_dets.extend(_detect_tile(tile_img, tile_info, model, debug=verbose))
+            all_dets.extend(_detect_tile(tile_img, tile_info, model,
+                                         debug=verbose, file_path=str(path)))
         except ConnectionError as e:
             if verbose:
                 print(f"\n  [ERROR] {e}")
@@ -572,7 +857,7 @@ in floor plan PDFs and images using a local Ollama vision model.
 
 Available tools — call them with a <tool_call> block:
 
-  detect_file(path, page_num=0, dpi=150, save_image="")
+  detect_file(path, page_num=0, dpi=150, save_image="", model="{DEFAULT_MODEL}")
   detect_ground_truth()
   memory_search(file="", shape="", min_confidence=0.0, limit=50)
   memory_stats()
@@ -581,6 +866,11 @@ Available tools — call them with a <tool_call> block:
   references_reload()
   get_status()
   get_ground_truth_images()
+  add_correction(tile_hash, action, shape="", bbox=[x1,y1,x2,y2], notes="", file_path="", page_num=0, tile_index=0)
+  list_corrections(tile_hash="", file_path="", limit=100)
+  search_similar_tiles(description="keyword", limit=5)
+
+add_correction actions: confirm=detection is correct, reject=false positive, add=missed column
 
 TOOL CALL FORMAT:
 <tool_call>
@@ -616,6 +906,15 @@ def _dispatch(name: str, args: dict) -> str:
         case "references_reload": return json.dumps({"loaded_shapes": references_reload()}, indent=2)
         case "get_status":      return json.dumps(get_status(), indent=2)
         case "get_ground_truth_images": return json.dumps(get_ground_truth_images(), indent=2)
+        case "add_correction":  return json.dumps(add_correction(**{
+                                    k: args[k] for k in args
+                                    if k in ("tile_hash","action","shape","bbox","notes",
+                                             "file_path","page_num","tile_index","x_offset","y_offset")}), indent=2)
+        case "list_corrections": return json.dumps(list_corrections(**{
+                                    k: args[k] for k in args
+                                    if k in ("tile_hash","file_path","limit")}), indent=2)
+        case "search_similar_tiles": return json.dumps(search_similar_tiles(
+                                    args.get("description",""), args.get("limit",5)), indent=2)
         case _:                 return json.dumps({"error": f"Unknown tool: {name}"})
 
 
