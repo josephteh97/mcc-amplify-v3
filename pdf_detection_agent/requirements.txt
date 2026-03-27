@@ -1,3 +1,18 @@
-pymupdf>=1.24.0
-Pillow>=10.0.0
-mcp[cli]>=1.0.0
+# PDF Column Detection Agent — dependencies
+# Install: pip install -r requirements.txt
+#
+# Runtime: Python 3.10+
+# Vision model: Ollama (install separately from https://ollama.com)
+#   ollama pull moondream:latest        # default — fast, 1.7 GB
+#   ollama pull qwen2.5vl:3b            # alternative vision model
+#   ollama pull qwen3-vl:8b             # best quality (slow on small VRAM)
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+PyMuPDF>=1.23.7          # PDF rasterisation (fitz)
+Pillow>=10.1.0           # Image loading, drawing, base64 encoding
+
+# ── Feedback UI ───────────────────────────────────────────────────────────────
+gradio>=6.10.0           # Web-based annotation interface (feedback_app.py)
+
+# ── MCP server (optional — only needed for Claude Desktop / MCP integration) ──
+mcp[cli]>=1.0.0          # mcp_agent_server.py
