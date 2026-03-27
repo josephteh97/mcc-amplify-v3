@@ -42,6 +42,12 @@ DB_PATH          = Path(__file__).parent / "detections.db"
 GT_DIR           = Path(__file__).parent / "ground_truth" / "columns"
 MEMORY_JSON_PATH = Path(__file__).parent / "memory.json"
 VALID_SHAPES     = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
+_SHAPE_ALIAS     = {
+    "i-beam": "i_beam", "ibeam": "i_beam", "i beam": "i_beam",
+    "h-beam": "i_beam", "hbeam": "i_beam", "h beam": "i_beam",
+    "circle": "round",  "circular": "round",
+    "rect": "rectangle",
+}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -309,20 +315,18 @@ def _get_tile_context(tile_hash: str) -> str:
     corrections = data["corrections"].get(tile_hash, [])
     if not corrections:
         return ""
-    confirmed = [c for c in corrections if c["action"] in ("confirm", "add")]
-    rejected  = [c for c in corrections if c["action"] == "reject"]
-    lines = ["\n## Previous human corrections for this exact tile:"]
-    if confirmed:
-        lines.append("CONFIRMED/ADDED columns (these are real):")
-        for c in confirmed:
-            lines.append(f"  - {c['shape']} column at bbox {c['bbox']}"
-                         + (f"  ({c['notes']})" if c.get("notes") else ""))
-    if rejected:
-        lines.append("REJECTED detections (false positives — NOT columns):")
-        for c in rejected:
-            lines.append(f"  - Previously detected {c.get('shape','?')} at {c['bbox']} was WRONG")
-    lines.append("Use these as ground truth but also detect any additional columns.\n")
-    return "\n".join(lines)
+    # Deduplicate by bbox — later entries (more recent saves) overwrite earlier ones.
+    # Rounds to 2dp so near-identical boxes from repeated clicks collapse to one entry.
+    seen: dict[tuple, dict] = {}
+    for c in corrections:
+        key = tuple(round(v, 2) for v in c["bbox"][:4])
+        seen[key] = c
+    confirmed = [c for c in seen.values() if c["action"] in ("confirm", "add")]
+    rejected  = [c for c in seen.values() if c["action"] == "reject"]
+    # Keep concise — moondream has ~1500 tokens total for prompt + output
+    yes = "; ".join(f"{c['shape']}@{[round(v,2) for v in c['bbox'][:4]]}" for c in confirmed) or "none"
+    no  = "; ".join(f"{c.get('shape','?')}@{[round(v,2) for v in c['bbox'][:4]]}" for c in rejected) or "none"
+    return f"\nPrior human corrections — REAL columns: {yes} | FALSE positives to skip: {no}\n"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -547,21 +551,26 @@ If no columns are found: {"columns": [], "tile_notes": "no columns detected"}
 
 
 _USER_DETECT_MOONDREAM = """\
-This is a structural engineering floor plan. I need to find ALL structural columns.
+This is a structural floor plan. Find ALL structural columns across the ENTIRE image.
 
-Columns are small geometric symbols at beam/grid intersections:
-- Filled solid black squares or rectangles
-- Outlined/hollow squares or rectangles with thick borders
-- Filled or outlined circles (NOT the open circles at grid line ends with letter/number labels)
+Columns sit at the intersections of the structural grid — they are spread across the FULL width AND height of the plan. SCAN every row and every column of the grid. Do NOT focus on just one horizontal strip.
+
+Column symbols:
+- Small solid/outlined squares or rectangles at grid intersections
+- Small solid/outlined circles at grid intersections (NOT the large open circles with numbers at grid line ends)
 - I-shaped or H-shaped cross-sections
-- Labels nearby: C1, C2, H-C1, H-C9 etc.
+- May have labels nearby: C1, C2, H-C1, H-C9
 
-For EACH column you find, describe its location using grid position (e.g. "top-left quarter", "center", "right edge") AND approximate pixel position in this 640x640 image.
+Rules:
+- NEVER report the same location twice — each grid intersection gets at most one detection
+- Columns do NOT overlap each other on the same floor; if two boxes occupy the same area, that is a duplicate — skip it
+- Expect columns spread across multiple rows (top, middle, bottom of the image) and multiple columns (left to right)
+- The open circles at the ends of dashed grid lines are NOT columns — ignore them
 
 Respond as JSON only:
-{"columns": [{"shape": "square|rectangle|round|i_beam|square_round|i_square", "position": "description", "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0}], "tile_notes": "brief description"}
+{"columns": [{"shape": "square|rectangle|round|i_beam|square_round|i_square", "position": "row and column description e.g. top-left, center-right", "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0}], "tile_notes": "brief description"}
 
-If no columns: {"columns": [], "tile_notes": "no columns visible"}
+If no columns visible: {"columns": [], "tile_notes": "no columns visible"}
 """
 
 
@@ -626,6 +635,24 @@ def _save_tile_note(tile_hash: str, description: str, info: _TileInfo, file_path
              description, datetime.now().isoformat()),
         )
     con.close()
+
+
+def _cell_dedup(dets: list[dict], w: int, h: int, bbox_key: str,
+                grid_cols: int, grid_rows: int) -> list[dict]:
+    """Keep highest-confidence detection per grid cell. Works for any bbox key."""
+    cell_w = w / grid_cols
+    cell_h = h / grid_rows
+    best: dict[tuple, dict] = {}
+    for det in sorted(dets, key=lambda d: d.get("confidence", 0.0), reverse=True):
+        bbox = det.get(bbox_key, [])
+        if len(bbox) != 4:
+            continue
+        cx = (bbox[0] + bbox[2]) / 2
+        cy = (bbox[1] + bbox[3]) / 2
+        cell = (int(cx / cell_w), int(cy / cell_h))
+        if cell not in best:
+            best[cell] = det
+    return list(best.values())
 
 
 def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
@@ -697,18 +724,12 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
         bbox = [bbox[0]*sx, bbox[1]*sy, bbox[2]*sx, bbox[3]*sy]
         # Handle pipe-separated / dash-variant shapes → normalise to VALID_SHAPES
         shape_raw = col.get("shape", "square")
-        _shape_alias = {
-            "i-beam": "i_beam", "ibeam": "i_beam", "i beam": "i_beam",
-            "h-beam": "i_beam", "hbeam": "i_beam", "h beam": "i_beam",
-            "circle": "round",  "circular": "round",
-            "rect": "rectangle",
-        }
         shape = next(
             (s.strip() for s in re.split(r"[|/,]", str(shape_raw).lower())
-             if _shape_alias.get(s.strip(), s.strip()) in VALID_SHAPES),
+             if _SHAPE_ALIAS.get(s.strip(), s.strip()) in VALID_SHAPES),
             "square"
         )
-        shape = _shape_alias.get(shape, shape)
+        shape = _SHAPE_ALIAS.get(shape, shape)
         try:
             conf = float(col.get("confidence", 0.5))
             conf = conf / 100.0 if conf > 1.0 else conf
@@ -720,6 +741,8 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
                      "notes": col.get("notes", col.get("position", "")),
                      "tile_hash": tile_hash,
                      "tile_index": info.index, "page_num": info.page_num})
+    dets = _nms(dets)
+    dets = _cell_dedup(dets, info.width, info.height, "bbox_tile", 10, 10)
     return dets
 
 
@@ -736,13 +759,16 @@ def _iou(a: list[float], b: list[float]) -> float:
     return inter / ((a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - inter)
 
 
-def _nms(detections: list[dict], threshold: float = 0.3) -> list[dict]:
+def _nms(detections: list[dict], threshold: float = 0.1) -> list[dict]:
+    """IoU-based NMS. Threshold lowered to 0.1 — structural columns never overlap."""
     kept = []
     for det in sorted(detections, key=lambda d: d.get("confidence", 0.0), reverse=True):
         bbox = det.get("bbox_page", [])
         if len(bbox) == 4 and not any(_iou(bbox, k["bbox_page"]) > threshold for k in kept):
             kept.append(det)
     return kept
+
+
 
 
 def detect_file(
@@ -790,6 +816,7 @@ def detect_file(
         print()
 
     final = _nms(all_dets)
+    final = _cell_dedup(final, W, H, "bbox_page", 12, 12)
     for idx, det in enumerate(final, 1):
         det["id"] = idx
 
