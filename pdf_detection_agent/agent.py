@@ -39,7 +39,7 @@ MAX_TOOL_LOOPS  = 8
 SKILLS_DIR      = Path(__file__).parent / "skills"
 DB_PATH         = Path(__file__).parent / "detections.db"
 GT_DIR          = Path(__file__).parent / "ground_truth" / "columns"
-VALID_SHAPES    = {"square", "rectangle", "circle", "i_beam"}
+VALID_SHAPES    = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -245,22 +245,36 @@ def draw_detections(img: Image.Image, detections: list[dict]) -> Image.Image:
 # Ground-truth reference images (few-shot visual examples)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Filename keywords → shape (first match wins; order matters)
-_SHAPE_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("square",    ["square", "sqaure"]),   # include common typo
-    ("rectangle", ["rect"]),
-    ("circle",    ["round", "circle"]),
-    ("i_beam",    ["i_beam", "ibeam", "i_col"]),
-]
+# Keyword sets used to infer shape from ground-truth image filenames
+_KW_SQUARE = {"square", "sqaure", "squa", "sqau", "squ"}   # covers typos/abbreviations
+_KW_ROUND  = {"round", "circle"}
+_KW_I_BEAM = {"i_beam", "ibeam", "i_col", "i_sqau", "i_squa"}
+_KW_RECT   = {"rect"}
 
 _REFERENCES: list[tuple[str, str]] | None = None   # [(shape, b64), ...] — cached
 
 
 def _infer_shape(filename: str) -> str | None:
+    """Infer column shape from ground-truth filename, including combined shapes."""
     name = filename.lower()
-    for shape, keywords in _SHAPE_KEYWORDS:
-        if any(kw in name for kw in keywords):
-            return shape
+    has_square = any(kw in name for kw in _KW_SQUARE)
+    has_round  = any(kw in name for kw in _KW_ROUND)
+    has_i_beam = any(kw in name for kw in _KW_I_BEAM)
+    has_rect   = any(kw in name for kw in _KW_RECT)
+    # Combined shapes — checked before singles (more specific)
+    if has_i_beam and has_square:
+        return "i_square"
+    if has_round and has_square:
+        return "square_round"
+    # Single shapes
+    if has_square:
+        return "square"
+    if has_rect:
+        return "rectangle"
+    if has_round:
+        return "round"
+    if has_i_beam:
+        return "i_beam"
     return None
 
 
@@ -313,12 +327,14 @@ You are an expert architectural floor plan analyst specialised in detecting stru
   solid, filled geometric shapes.
 
 ## Column shapes
-| Shape     | Description                                              |
-|-----------|----------------------------------------------------------|
-| square    | Small filled black/dark square at a grid intersection    |
-| rectangle | Filled dark rectangle (non-square) at a grid point       |
-| circle    | Filled solid circle (round column)                       |
-| i_beam    | I-beam or H-section profile symbol                       |
+| Shape        | Description                                                      |
+|--------------|------------------------------------------------------------------|
+| square       | Small filled black/dark square at a grid intersection            |
+| rectangle    | Filled dark rectangle (non-square) at a grid point               |
+| round        | Filled solid circle/round column                                 |
+| i_beam       | I-beam or H-section profile symbol (no outer casing)             |
+| square_round | Round column enclosed in a square concrete casing                |
+| i_square     | I-beam column enclosed in a square concrete casing               |
 
 ## What is NOT a column
 - Open/hollow circles (grid balloons)
@@ -335,13 +351,14 @@ visible grid lines — focus on identifying the filled shapes themselves.
 
 Look for:
 - Small filled black/dark squares or rectangles
-- Small solid filled circles (round columns)
-- I-beam or H-section profile symbols
+- Small solid filled circles/round columns
+- I-beam or H-section profile symbols (bare or inside a square casing)
+- Round columns inside a square concrete casing
 - Any small solid geometric shape that represents a load-bearing column
 
 For every column found output:
   "bbox": [x1, y1, x2, y2]  — pixel bounding box within THIS tile
-  "shape": "square" | "rectangle" | "circle" | "i_beam"
+  "shape": "square" | "rectangle" | "round" | "i_beam" | "square_round" | "i_square"
   "confidence": float 0.0–1.0
   "notes": one-line observation
 
@@ -570,7 +587,7 @@ TOOL CALL FORMAT:
 {{"name": "detect_file", "arguments": {{"path": "/path/to/file.pdf", "page_num": 0}}}}
 </tool_call>
 
-Column shapes: square | rectangle | circle | i_beam
+Column shapes: square | rectangle | round | i_beam | square_round | i_square
 Confidence: float 0.0–1.0
 """
 

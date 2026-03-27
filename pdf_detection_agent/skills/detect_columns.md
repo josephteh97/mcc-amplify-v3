@@ -8,23 +8,26 @@ using the local Ollama vision model.
 - "detect columns in ..."  /  "find columns in ..."
 - "how many columns are in ..."  /  "locate the columns ..."
 
-## Key concepts
-
-### Grid lines & balloons
-Floor plans use thin dash-dot **centrelines** defining the structural grid.
-**Grid balloons** — small *open* circles at the ends of grid lines — carry axis labels
-(A, B, C... / 1, 2, 3...). Do NOT confuse them with columns.
-
-### Where columns appear
-Structural columns sit at the **intersections** of grid lines as small, solid, filled shapes.
+## What is a column
+Columns are the load-bearing pillars of a concrete building — they carry the
+weight of every floor and roof above. Without them, the structure cannot stand.
 
 ## Column shapes
-| Shape       | Description                                           |
-|-------------|-------------------------------------------------------|
-| `square`    | Filled black/dark square at a grid intersection       |
-| `rectangle` | Filled dark rectangle (non-square) at a grid point    |
-| `circle`    | Filled solid circle (round column)                    |
-| `i_beam`    | I-beam or H-section profile symbol                    |
+| Shape          | Description                                                      |
+|----------------|------------------------------------------------------------------|
+| `square`       | Filled black/dark square at a grid intersection                  |
+| `rectangle`    | Filled dark rectangle (non-square) at a grid point               |
+| `round`        | Filled solid circle (round column)                               |
+| `i_beam`       | I-beam or H-section profile symbol, no outer casing             |
+| `square_round` | Round column enclosed in a square concrete casing                |
+| `i_square`     | I-beam column enclosed in a square concrete casing               |
+
+Some columns have a footing (wider base) below them — **ignore the footing**
+and draw the bounding box around the column section only.
+
+## Where columns appear
+Columns sit at **intersections** of the structural grid (thin dash-dot centrelines).
+**Grid balloons** — small *open* circles at grid line ends with axis labels — are NOT columns.
 
 ## What is NOT a column
 - Open/hollow circles (grid balloons)
@@ -42,7 +45,7 @@ Structural columns sit at the **intersections** of grid lines as small, solid, f
       "shape": "square", "confidence": 0.94,
       "notes": "solid black square at grid A-3 intersection" }
   ],
-  "stats": { "by_shape": {"square": 28, "circle": 10, "rectangle": 4},
+  "stats": { "by_shape": {"square": 28, "round": 10, "rectangle": 4},
              "avg_confidence": 0.87, "tiles": 48 }
 }
 ```
