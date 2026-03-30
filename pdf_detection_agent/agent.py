@@ -32,7 +32,7 @@ from PIL import Image, ImageDraw
 # ── Config ────────────────────────────────────────────────────────────────────
 
 OLLAMA_BASE_URL  = os.getenv("OLLAMA_URL",   "http://localhost:11434")
-DEFAULT_MODEL    = os.getenv("OLLAMA_MODEL", "moondream:latest")
+DEFAULT_MODEL    = os.getenv("OLLAMA_MODEL", "aisingapore/Gemma-SEA-LION-v4-4B-VL:latest")
 TILE_SIZE        = 1280
 TILE_STEP        = 1080          # 200 px overlap
 RENDER_DPI       = 150
@@ -41,7 +41,8 @@ SKILLS_DIR       = Path(__file__).parent / "skills"
 DB_PATH          = Path(__file__).parent / "detections.db"
 GT_DIR           = Path(__file__).parent / "ground_truth" / "columns"
 MEMORY_JSON_PATH = Path(__file__).parent / "memory.json"
-VALID_SHAPES     = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
+VALID_SHAPES        = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
+_SEALION_COORD_SCALE = 640 / 96   # SEA-LION vision encoder uses ~96px internal grid
 _SHAPE_ALIAS     = {
     "i-beam": "i_beam", "ibeam": "i_beam", "i beam": "i_beam",
     "h-beam": "i_beam", "hbeam": "i_beam", "h beam": "i_beam",
@@ -274,6 +275,35 @@ def add_correction(
     return {"ok": True, "tile_hash": tile_hash, "action": action}
 
 
+def undo_last_correction(tile_hash: str) -> dict:
+    """
+    Remove the most recent correction for a tile from memory.json.
+    SQLite history is intentionally preserved (non-destructive audit trail).
+    """
+    data = _mjson_load()
+    corrections = data["corrections"].get(tile_hash, [])
+    if not corrections:
+        return {"ok": False, "msg": "no corrections to undo"}
+    removed = corrections.pop()
+    if not corrections:
+        del data["corrections"][tile_hash]
+    _mjson_save(data)
+    return {"ok": True, "removed": removed}
+
+
+def clear_all_corrections() -> dict:
+    """
+    Wipe all human corrections from memory.json and the SQLite corrections table.
+    Detection run history (runs/columns tables) is preserved.
+    """
+    _mjson_save({"version": 1, "corrections": {}})
+    con = _db()
+    with con:
+        con.execute("DELETE FROM corrections")
+    con.close()
+    return {"ok": True}
+
+
 def list_corrections(tile_hash: str | None = None, file_path: str | None = None,
                      limit: int = 100) -> list[dict]:
     """List recorded human corrections, optionally filtered by tile or file."""
@@ -309,9 +339,9 @@ def search_similar_tiles(description: str, limit: int = 5) -> list[dict]:
     return rows
 
 
-def _get_tile_context(tile_hash: str) -> str:
+def _get_tile_context(tile_hash: str, _data: dict | None = None) -> str:
     """Build few-shot correction context to inject into the detection prompt."""
-    data = _mjson_load()
+    data = _data if _data is not None else _mjson_load()
     corrections = data["corrections"].get(tile_hash, [])
     if not corrections:
         return ""
@@ -323,7 +353,7 @@ def _get_tile_context(tile_hash: str) -> str:
         seen[key] = c
     confirmed = [c for c in seen.values() if c["action"] in ("confirm", "add")]
     rejected  = [c for c in seen.values() if c["action"] == "reject"]
-    # Keep concise — moondream has ~1500 tokens total for prompt + output
+    # Keep concise — vision models have limited context for prompt + output
     yes = "; ".join(f"{c['shape']}@{[round(v,2) for v in c['bbox'][:4]]}" for c in confirmed) or "none"
     no  = "; ".join(f"{c.get('shape','?')}@{[round(v,2) for v in c['bbox'][:4]]}" for c in rejected) or "none"
     return f"\nPrior human corrections — REAL columns: {yes} | FALSE positives to skip: {no}\n"
@@ -385,7 +415,7 @@ def _to_page_bbox(bbox: list[float], t: _TileInfo) -> list[float]:
 
 def _pil_to_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="JPEG", quality=85)
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -589,7 +619,7 @@ def _ollama(payload: dict, timeout: int = 600) -> str:
 
 def _parse_json(text: str) -> dict:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    # Remove trailing "..." continuation markers from truncated moondream output
+    # Remove trailing "..." continuation markers from truncated model output
     text = re.sub(r",\s*\.\.\.\s*(\]|\})", r"\1", text)
     text = re.sub(r"\.\.\.\s*$", "", text).strip()
     try:
@@ -605,7 +635,7 @@ def _parse_json(text: str) -> dict:
                 return json.loads(m.group())
             except json.JSONDecodeError:
                 pass
-        # Try to extract a complete JSON array (moondream returns bare array)
+        # Try to extract a complete JSON array (some models return bare arrays)
         m = re.search(r"\[.*\]", text, re.DOTALL)
         if m:
             try:
@@ -656,16 +686,18 @@ def _cell_dedup(dets: list[dict], w: int, h: int, bbox_key: str,
 
 
 def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
-                 debug: bool = False, file_path: str = "") -> list[dict]:
+                 debug: bool = False, file_path: str = "",
+                 _memory: dict | None = None) -> list[dict]:
     # Crop to actual content (strips white padding on edge tiles) then resize to 640×640.
     # This ensures the model's coordinate space maps fully onto real floor-plan content.
     content   = tile.crop((0, 0, info.width, info.height))
     send_tile = content.resize((640, 640), Image.LANCZOS)
     tile_hash = _tile_hash(send_tile)
-    correction = _get_tile_context(tile_hash)
+    correction = _get_tile_context(tile_hash, _memory)
 
     is_moondream = "moondream" in model.lower()
     is_qwen3_vl  = "qwen3-vl" in model.lower()
+    is_sealion   = "sea-lion" in model.lower() or "sealion" in model.lower()
 
     if is_moondream:
         # Moondream: 2048 total context. A 640×640 CLIP image ≈ 2000 tokens — no room.
@@ -707,7 +739,7 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
     parsed = _parse_json(raw)
     # Persist tile description for similarity search
     tile_note = parsed.get("tile_notes", "")
-    if tile_note and tile_note != "no columns detected":
+    if tile_note and tile_note not in ("no columns detected", "no columns visible"):
         _save_tile_note(tile_hash, tile_note, info, file_path)
 
     dets = []
@@ -715,9 +747,13 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
         bbox = col.get("bbox", [])
         if len(bbox) != 4:
             continue
-        # If moondream returns normalized 0-1 coordinates, convert to 640px space first
-        if all(isinstance(v, (int, float)) and v <= 1.0 for v in bbox):
+        # Normalise model-specific coordinate spaces to 640px before tile→page scaling
+        numeric = all(isinstance(v, (int, float)) for v in bbox)
+        if numeric and all(v <= 1.0 for v in bbox):
             bbox = [v * 640 for v in bbox]
+        elif is_sealion and numeric and all(v < 128 for v in bbox):
+            # SEA-LION vision encoder uses ~96px internal grid; scale up to 640px
+            bbox = [v * _SEALION_COORD_SCALE for v in bbox]
         # Scale from 640px space back to actual content dimensions (strips padding artefacts)
         sx   = info.width  / 640
         sy   = info.height / 640
@@ -769,8 +805,6 @@ def _nms(detections: list[dict], threshold: float = 0.1) -> list[dict]:
     return kept
 
 
-
-
 def detect_file(
     path:       str | Path,
     page_num:   int  = 0,
@@ -801,12 +835,14 @@ def detect_file(
         print(f"  Image: {W}×{H} px  |  Tiles: {len(tiles)}")
 
     all_dets: list[dict] = []
+    _memory = _mjson_load()
     for i, (tile_img, tile_info) in enumerate(tiles):
         if verbose:
             print(f"  Tile {i+1}/{len(tiles)}  offset=({tile_info.x_offset},{tile_info.y_offset})", end="\r")
         try:
             all_dets.extend(_detect_tile(tile_img, tile_info, model,
-                                         debug=verbose, file_path=str(path)))
+                                         debug=verbose, file_path=str(path),
+                                         _memory=_memory))
         except ConnectionError as e:
             if verbose:
                 print(f"\n  [ERROR] {e}")
