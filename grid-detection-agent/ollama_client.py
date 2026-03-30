@@ -1,0 +1,89 @@
+"""
+Thin wrapper around the local Ollama HTTP API for SEA-LION vision queries.
+"""
+
+import base64
+import time
+import json
+import requests
+
+# ── CONFIGURATION ────────────────────────────────────────────────────────────
+
+BASE_URL = "http://localhost:11434"
+MODEL = "aisingapore/Gemma-SEA-LION-v4-4B-VL:latest"
+MAX_RETRIES = 3
+BACKOFF_BASE = 2  # seconds
+
+
+# ── STARTUP CHECK ────────────────────────────────────────────────────────────
+
+def _verify_model():
+    """Raise RuntimeError if the SEA-LION model tag is not present in ollama list."""
+    try:
+        resp = requests.get(f"{BASE_URL}/api/tags", timeout=10)
+        resp.raise_for_status()
+        tags = [m["name"] for m in resp.json().get("models", [])]
+        if not any(MODEL in t or t in MODEL for t in tags):
+            raise RuntimeError(
+                f"SEA-LION model not found. Run: ollama pull {MODEL}\n"
+                f"Available models: {tags}"
+            )
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError(
+            f"Cannot connect to Ollama at {BASE_URL}. "
+            "Make sure Ollama is running: ollama serve"
+        )
+
+
+_verify_model()
+
+
+# ── INTERNAL HELPERS ─────────────────────────────────────────────────────────
+
+def _chat(payload: dict) -> str:
+    """Send a POST /api/chat request with retry logic."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.post(
+                f"{BASE_URL}/api/chat",
+                json=payload,
+                timeout=120,
+            )
+            resp.raise_for_status()
+
+            # Ollama streams NDJSON; accumulate chunks then join once
+            chunks = []
+            for line in resp.text.strip().splitlines():
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                chunks.append(chunk.get("message", {}).get("content", ""))
+                if chunk.get("done", False):
+                    break
+            return "".join(chunks).strip()
+
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as exc:
+            if attempt == MAX_RETRIES - 1:
+                raise RuntimeError(f"Ollama request failed after {MAX_RETRIES} attempts: {exc}")
+            time.sleep(BACKOFF_BASE ** attempt)
+
+
+def _query(prompt: str, image_path: str = None) -> str:
+    """Build and send a chat payload, optionally with an image."""
+    message = {"role": "user", "content": prompt}
+    if image_path is not None:
+        with open(image_path, "rb") as f:
+            message["images"] = [base64.b64encode(f.read()).decode("utf-8")]
+    return _chat({"model": MODEL, "messages": [message], "stream": True})
+
+
+# ── PUBLIC API ────────────────────────────────────────────────────────────────
+
+def query_vision(image_path: str, prompt: str) -> str:
+    """Send an image + text prompt to SEA-LION and return the text response."""
+    return _query(prompt, image_path=image_path)
+
+
+def query_text(prompt: str) -> str:
+    """Send a text-only prompt to SEA-LION and return the text response."""
+    return _query(prompt)

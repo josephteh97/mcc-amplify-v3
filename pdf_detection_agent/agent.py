@@ -41,14 +41,8 @@ SKILLS_DIR       = Path(__file__).parent / "skills"
 DB_PATH          = Path(__file__).parent / "detections.db"
 GT_DIR           = Path(__file__).parent / "ground_truth" / "columns"
 MEMORY_JSON_PATH = Path(__file__).parent / "memory.json"
-VALID_SHAPES        = {"square", "rectangle", "round", "i_beam", "square_round", "i_square"}
+VALID_SHAPES         = {"column"}
 _SEALION_COORD_SCALE = 640 / 96   # SEA-LION vision encoder uses ~96px internal grid
-_SHAPE_ALIAS     = {
-    "i-beam": "i_beam", "ibeam": "i_beam", "i beam": "i_beam",
-    "h-beam": "i_beam", "hbeam": "i_beam", "h beam": "i_beam",
-    "circle": "round",  "circular": "round",
-    "rect": "rectangle",
-}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -564,23 +558,14 @@ They are the most critical structural element in the building.
 Columns appear at or near **beam/grid intersections** as small geometric shapes.
 They may be drawn as:
 - **Solid filled** black/dark shapes (fully shaded)
-- **Outlined hollow** squares or rectangles with a bold/thick border (very common in CAD drawings)
+- **Outlined hollow** squares, rectangles, or circles with a bold/thick border (very common in CAD drawings)
 - **Cross-hatched** rectangles
+- **I-beam or H-section** profile symbols
 They are often labelled nearby with IDs like C1, C2, H-C1, H-C9, etc.
 
 ## Grid lines & balloons
 Grid lines are thin dash-dot centrelines. **Grid balloons** are small open circles at
 grid line ends carrying axis labels (A, B, 1, 2...). Do NOT confuse them with columns.
-
-## Column shapes
-| Shape        | Description                                                              |
-|--------------|--------------------------------------------------------------------------|
-| square       | Square shape (filled, outlined, or hatched) at a structural position     |
-| rectangle    | Non-square rectangle (filled, outlined, or hatched) at a structural point|
-| round        | Circular column (filled or outlined circle, NOT a grid balloon)          |
-| i_beam       | I-beam or H-section profile symbol, no outer casing                     |
-| square_round | Round column inside a square concrete casing                             |
-| i_square     | I-beam column inside a square concrete casing                            |
 
 ## What is NOT a column
 - Grid balloons (open circles at grid line ends with alphanumeric axis labels)
@@ -600,21 +585,19 @@ Look for:
 - Small squares or rectangles (filled OR outlined with thick border) at structural positions
 - Circular columns (filled or outlined — but NOT open grid balloons with axis labels)
 - I-beam or H-section profile symbols
-- Any column shape inside a square casing (square_round, i_square)
 
 A tile may contain MANY columns — report every single one. Do not stop after finding one.
 
 For every column found output:
   "bbox": [x1, y1, x2, y2]  — pixel coordinates within this 640×640 tile
-  "shape": "square" | "rectangle" | "round" | "i_beam" | "square_round" | "i_square"
   "confidence": float 0.0–1.0
-  "notes": one-line observation
+  "notes": one-line description of its visual appearance (e.g. "solid square", "hollow circle", "hatched rectangle")
 
 Respond ONLY with valid JSON — no markdown fences, no extra text:
 {
   "columns": [
-    { "bbox": [x1, y1, x2, y2], "shape": "square",     "confidence": 0.92, "notes": "brief note" },
-    { "bbox": [x1, y1, x2, y2], "shape": "rectangle",  "confidence": 0.85, "notes": "brief note" }
+    { "bbox": [x1, y1, x2, y2], "confidence": 0.92, "notes": "solid filled square" },
+    { "bbox": [x1, y1, x2, y2], "confidence": 0.85, "notes": "outlined hollow rectangle" }
   ],
   "tile_notes": "brief description of tile"
 }
@@ -642,7 +625,7 @@ Rules:
 - The open circles at the ends of dashed grid lines are NOT columns — ignore them
 
 Respond as JSON only:
-{"columns": [{"shape": "square|rectangle|round|i_beam|square_round|i_square", "position": "row and column description e.g. top-left, center-right", "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0}], "tile_notes": "brief description"}
+{"columns": [{"position": "row and column description e.g. top-left, center-right", "bbox": [x1,y1,x2,y2], "confidence": 0.0-1.0, "notes": "visual appearance e.g. solid square, hollow circle"}], "tile_notes": "brief description"}
 
 If no columns visible: {"columns": [], "tile_notes": "no columns visible"}
 """
@@ -802,14 +785,7 @@ def _detect_tile(tile: Image.Image, info: _TileInfo, model: str,
         sx   = info.width  / 640
         sy   = info.height / 640
         bbox = [bbox[0]*sx, bbox[1]*sy, bbox[2]*sx, bbox[3]*sy]
-        # Handle pipe-separated / dash-variant shapes → normalise to VALID_SHAPES
-        shape_raw = col.get("shape", "square")
-        shape = next(
-            (s.strip() for s in re.split(r"[|/,]", str(shape_raw).lower())
-             if _SHAPE_ALIAS.get(s.strip(), s.strip()) in VALID_SHAPES),
-            "square"
-        )
-        shape = _SHAPE_ALIAS.get(shape, shape)
+        shape = "column"
         try:
             conf = float(col.get("confidence", 0.5))
             conf = conf / 100.0 if conf > 1.0 else conf

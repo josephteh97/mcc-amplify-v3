@@ -1,0 +1,4 @@
+# grid-detection-agent
+pdf2image
+Pillow
+requests
