@@ -133,12 +133,17 @@ def _mem_md():
             f"**SQLite** — {stats['total_runs']} run(s), {stats['total_columns']} detection(s)")
 
 
+def _bbox_tile_to_norm(bbox, tile_info):
+    """Convert tile-space bbox to normalized 0–1 coords."""
+    return [bbox[0]/tile_info.width,  bbox[1]/tile_info.height,
+            bbox[2]/tile_info.width,  bbox[3]/tile_info.height]
+
+
 def _disp_to_bboxes(x1, y1, x2, y2, scale, tile_info):
     """Convert display-px coords to tile-space, page-space, and normalized 0–1."""
     bbox_tile = [x1/scale, y1/scale, x2/scale, y2/scale]
     bbox_page = agent._to_page_bbox(bbox_tile, tile_info)
-    bbox_norm = [bbox_tile[0]/tile_info.width,  bbox_tile[1]/tile_info.height,
-                 bbox_tile[2]/tile_info.width,  bbox_tile[3]/tile_info.height]
+    bbox_norm = _bbox_tile_to_norm(bbox_tile, tile_info)
     return bbox_tile, bbox_page, bbox_norm
 
 
@@ -238,7 +243,6 @@ def detect_all_tiles(state):
         state["all_tile_dets"][i] = dets
         total_dets += len(dets)
 
-    # Show current tile's cached results
     cur = state["tile_idx"]
     state["dets"]     = state["all_tile_dets"].get(cur, [])
     state["reviews"]  = {}
@@ -387,9 +391,7 @@ def reject_quick(state):
         return state, _render(state), "⚠️ Select a detection row first.", _det_rows(dets, state.get("reviews", {})), _mem_md()
     det          = dets[idx]
     _, tile_info = state["tiles"][state["tile_idx"]]
-    bbox         = det.get("bbox_tile", [0, 0, 0, 0])
-    bbox_norm    = [bbox[0]/tile_info.width,  bbox[1]/tile_info.height,
-                    bbox[2]/tile_info.width,  bbox[3]/tile_info.height]
+    bbox_norm    = _bbox_tile_to_norm(det.get("bbox_tile", [0,0,0,0]), tile_info)
     agent.add_correction(
         tile_hash=state["tile_hash"], action="reject", shape=det.get("shape", "square"),
         bbox=bbox_norm, notes="quick-reject",
@@ -410,9 +412,7 @@ def confirm_100(state):
         return state, _render(state), "⚠️ Select a detection row first.", _det_rows(dets, state.get("reviews", {})), _mem_md()
     det          = dets[idx]
     _, tile_info = state["tiles"][state["tile_idx"]]
-    bbox         = det.get("bbox_tile", [0, 0, 0, 0])
-    bbox_norm    = [bbox[0]/tile_info.width,  bbox[1]/tile_info.height,
-                    bbox[2]/tile_info.width,  bbox[3]/tile_info.height]
+    bbox_norm    = _bbox_tile_to_norm(det.get("bbox_tile", [0,0,0,0]), tile_info)
     agent.add_correction(
         tile_hash=state["tile_hash"], action="confirm", shape=det.get("shape", "square"),
         bbox=bbox_norm, notes="confirmed-100pct",
@@ -427,13 +427,22 @@ def confirm_100(state):
 
 
 def clear_memory_ui(state):
-    """Wipe all corrections from memory.json and SQLite. Detection history preserved."""
+    """Wipe corrections table + memory.json. Detection run history (runs/columns) preserved."""
     agent.clear_all_corrections()
-    # Reset current tile's review state so the image reflects the cleared memory
     state["reviews"] = {}
     return (state, _render(state),
-            "🗑️ All corrections cleared — memory.json and SQLite corrections wiped.",
+            "🗑️ Corrections cleared — memory.json + SQLite corrections table wiped.",
             _det_rows(state.get("dets", []), {}), _mem_md())
+
+
+def clear_detection_history_ui(state):
+    """Wipe the runs and columns tables (detection history). Corrections preserved."""
+    result = agent.memory_clear()
+    state["dets"]    = []
+    state["reviews"] = {}
+    return (state, _render(state),
+            f"🗑️ Detection history cleared — {result['runs_deleted']} run(s), {result['columns_deleted']} detection(s) removed.",
+            _det_rows([], {}), _mem_md())
 
 
 def confirm_all(state):
@@ -442,23 +451,22 @@ def confirm_all(state):
     if not dets:
         return state, _render(state), "⚠️ No detections to confirm.", _det_rows([], {}), _mem_md()
     _, tile_info = state["tiles"][state["tile_idx"]]
-    count = 0
-    for i, det in enumerate(dets):
-        if state["reviews"].get(i, "pending") != "pending":
-            continue
-        bbox      = det.get("bbox_tile", [0, 0, 0, 0])
-        bbox_norm = [bbox[0]/tile_info.width,  bbox[1]/tile_info.height,
-                     bbox[2]/tile_info.width,  bbox[3]/tile_info.height]
-        agent.add_correction(
-            tile_hash=state["tile_hash"], action="confirm", shape=det.get("shape", "square"),
-            bbox=bbox_norm, notes="bulk-confirm",
-            file_path=state["file_path"], page_num=state.get("page_num", 0),
-            tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
-        )
+    pending = [(i, det) for i, det in enumerate(dets)
+               if state["reviews"].get(i, "pending") == "pending"]
+    if not pending:
+        return state, _render(state), "✅ All detections already reviewed.", _det_rows(dets, state["reviews"]), _mem_md()
+    agent.add_corrections_batch(
+        tile_hash=state["tile_hash"],
+        corrections=[{"action": "confirm", "shape": det.get("shape","square"),
+                      "bbox": _bbox_tile_to_norm(det.get("bbox_tile",[0,0,0,0]), tile_info),
+                      "notes": "bulk-confirm"} for _, det in pending],
+        file_path=state["file_path"], page_num=state.get("page_num", 0),
+        tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
+    )
+    for i, _ in pending:
         state["reviews"][i] = "confirmed"
-        count += 1
     return (state, _render(state),
-            f"✅ {count} detection(s) confirmed",
+            f"✅ {len(pending)} detection(s) confirmed",
             _det_rows(dets, state["reviews"]), _mem_md())
 
 
@@ -468,23 +476,22 @@ def reject_all(state):
     if not dets:
         return state, _render(state), "⚠️ No detections to reject.", _det_rows([], {}), _mem_md()
     _, tile_info = state["tiles"][state["tile_idx"]]
-    count = 0
-    for i, det in enumerate(dets):
-        if state["reviews"].get(i, "pending") != "pending":
-            continue
-        bbox      = det.get("bbox_tile", [0, 0, 0, 0])
-        bbox_norm = [bbox[0]/tile_info.width,  bbox[1]/tile_info.height,
-                     bbox[2]/tile_info.width,  bbox[3]/tile_info.height]
-        agent.add_correction(
-            tile_hash=state["tile_hash"], action="reject", shape=det.get("shape", "square"),
-            bbox=bbox_norm, notes="bulk-reject",
-            file_path=state["file_path"], page_num=state.get("page_num", 0),
-            tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
-        )
+    pending = [(i, det) for i, det in enumerate(dets)
+               if state["reviews"].get(i, "pending") == "pending"]
+    if not pending:
+        return state, _render(state), "✗ All detections already reviewed.", _det_rows(dets, state["reviews"]), _mem_md()
+    agent.add_corrections_batch(
+        tile_hash=state["tile_hash"],
+        corrections=[{"action": "reject", "shape": det.get("shape","square"),
+                      "bbox": _bbox_tile_to_norm(det.get("bbox_tile",[0,0,0,0]), tile_info),
+                      "notes": "bulk-reject"} for _, det in pending],
+        file_path=state["file_path"], page_num=state.get("page_num", 0),
+        tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
+    )
+    for i, _ in pending:
         state["reviews"][i] = "rejected"
-        count += 1
     return (state, _render(state),
-            f"✗ {count} detection(s) rejected",
+            f"✗ {len(pending)} detection(s) rejected",
             _det_rows(dets, state["reviews"]), _mem_md())
 
 
@@ -665,10 +672,15 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
 
                 # Memory panel
                 gr.Markdown("### 💾 Memory")
+                gr.Markdown(
+                    "*Corrections* — what the LLM learns from.  "
+                    "*Detection history* — past `detect_file` runs stored in SQLite."
+                )
                 mem_out     = gr.Markdown(_mem_md())
                 with gr.Row():
-                    refresh_btn   = gr.Button("🔄 Refresh Stats",      variant="secondary", scale=2)
-                    clear_mem_btn = gr.Button("🗑️ Clear All Corrections", variant="stop",   scale=2)
+                    refresh_btn      = gr.Button("↺ Sync",                    variant="secondary", scale=1)
+                    clear_mem_btn    = gr.Button("🗑️ Clear Corrections",       variant="stop",      scale=2)
+                    clear_hist_btn   = gr.Button("🗑️ Clear Detection History", variant="stop",      scale=2)
 
         # ── Wiring ────────────────────────────────────────────────────────────
 
@@ -733,6 +745,9 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
 
         clear_mem_btn.click(clear_memory_ui, [state],
                             [state, tile_out, detect_msg, det_table, mem_out])
+
+        clear_hist_btn.click(clear_detection_history_ui, [state],
+                             [state, tile_out, detect_msg, det_table, mem_out])
 
     return app
 

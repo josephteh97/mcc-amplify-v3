@@ -275,6 +275,50 @@ def add_correction(
     return {"ok": True, "tile_hash": tile_hash, "action": action}
 
 
+def add_corrections_batch(
+    tile_hash: str,
+    corrections: list[dict],   # each: {action, shape, bbox, notes}
+    file_path: str = "",
+    page_num: int = 0,
+    tile_index: int = 0,
+    x_offset: int = 0,
+    y_offset: int = 0,
+) -> dict:
+    """
+    Record multiple corrections for one tile in a single memory.json write.
+    Use instead of looping add_correction() to avoid N reads + N writes.
+    """
+    if not corrections:
+        return {"ok": True, "tile_hash": tile_hash, "count": 0}
+    _VALID = ("confirm", "reject", "add")
+    for c in corrections:
+        if c.get("action") not in _VALID:
+            return {"error": f"action must be one of {_VALID}"}
+    ts   = datetime.now().isoformat()
+    _NB  = [0.0, 0.0, 0.0, 0.0]
+    con  = _db()
+    with con:
+        con.executemany(
+            "INSERT INTO corrections "
+            "(tile_hash,file_path,page_num,tile_index,x_offset,y_offset,"
+            " action,shape,bbox_x1,bbox_y1,bbox_x2,bbox_y2,notes,timestamp)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(tile_hash, file_path, page_num, tile_index, x_offset, y_offset,
+              c["action"], c.get("shape"), *(c.get("bbox") or _NB), c.get("notes",""), ts)
+             for c in corrections],
+        )
+    con.close()
+
+    data = _mjson_load()
+    slot = data["corrections"].setdefault(tile_hash, [])
+    for c in corrections:
+        slot.append({"action": c["action"], "shape": c.get("shape"),
+                     "bbox": c.get("bbox") or _NB,
+                     "notes": c.get("notes",""), "timestamp": ts})
+    _mjson_save(data)
+    return {"ok": True, "tile_hash": tile_hash, "count": len(corrections)}
+
+
 def undo_last_correction(tile_hash: str) -> dict:
     """
     Remove the most recent correction for a tile from memory.json.
