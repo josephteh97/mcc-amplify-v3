@@ -32,9 +32,8 @@ _C = {
     "new":       (200, 80, 255),
     "p1":        (255, 60, 0),
 }
-_SHAPES   = [s for s in ("square", "rectangle", "round", "i_beam", "square_round", "i_square")
-              if s in agent.VALID_SHAPES]
 _MAX_DISP = 680
+_SHAPE    = "column"
 
 # ── Ollama model list ──────────────────────────────────────────────────────────
 
@@ -85,7 +84,7 @@ def _draw_detections(img: Image.Image, dets, reviews, selected, scale,
         if reviews.get(i) == "rejected":
             draw.line([x1, y1, x2, y2], fill=col, width=2)
             draw.line([x2, y1, x1, y2], fill=col, width=2)
-        lbl = f"[{i+1}] {det.get('shape','?')[:3]} {int(det.get('confidence',0)*100)}%"
+        lbl = f"[{i+1}] col {int(det.get('confidence',0)*100)}%"
         tw  = len(lbl)*7+4
         draw.rectangle([x1, max(0,y1-15), x1+tw, y1], fill=col)
         draw.text((x1+2, max(0,y1-15)), lbl, fill=(0,0,0))
@@ -111,8 +110,9 @@ def _render(state, preview=None, preview_col=None) -> Image.Image | None:
 
 def _det_rows(dets, reviews):
     icons = {"pending": "⏳", "confirmed": "✅", "rejected": "✗"}
-    return [[i+1, d.get("shape","?"), f"{d.get('confidence',0):.0%}",
+    return [[i+1, f"{d.get('confidence',0):.0%}",
              str([int(v) for v in d.get("bbox_tile", [])]),
+             d.get("notes","")[:40],
              icons.get(reviews.get(i, "pending"), "⏳")]
             for i, d in enumerate(dets)]
 
@@ -153,10 +153,9 @@ def _mode_badge(state) -> str:
     p1   = state.get("p1")
     dets = state.get("dets", [])
     if sel >= 0:
-        shape = dets[sel].get("shape", "?") if sel < len(dets) else "?"
         if p1:
-            return f"🟠 **EDIT MODE — det [{sel+1}] ({shape})** — click P2 to save new bbox"
-        return f"🔵 **EDIT MODE — det [{sel+1}] ({shape}) selected** — click image to redraw · or drag sliders"
+            return f"🟠 **EDIT MODE — det [{sel+1}] (column)** — click P2 to save new bbox"
+        return f"🔵 **EDIT MODE — det [{sel+1}] (column) selected** — click image to redraw · or drag sliders"
     if p1:
         return "🟣 **ADD MODE — P1 set** — click the opposite corner to complete the box"
     return "🟣 **ADD MODE** — no row selected · click image twice (P1 → P2) or fill sliders below"
@@ -264,7 +263,7 @@ def select_row(state, evt: gr.SelectData):
     _u   = gr.update
     if not (0 <= idx < len(dets)):
         return (state, _render(state), "", 0.5,
-                _u(), _u(), _u(), _u(), "square", "", _mode_badge(state))
+                _u(), _u(), _u(), _u(), "", _mode_badge(state))
     det  = dets[idx]
     state["selected"] = idx
     state["p1"]       = None
@@ -274,11 +273,11 @@ def select_row(state, evt: gr.SelectData):
     bbox = det.get("bbox_tile", [0, 0, 100, 100])
     db   = [int(v * scale) for v in bbox]
     conf = det.get("confidence", 0.5)
-    info = (f"**Detection [{idx+1}]** — {det.get('shape','?')} | "
+    info = (f"**Detection [{idx+1}]** — column | "
             f"conf {conf:.0%} | tile px {[int(v) for v in bbox]}")
     return (state, _render(state), info, round(conf, 2),
             _u(value=db[0]), _u(value=db[1]), _u(value=db[2]), _u(value=db[3]),
-            det.get("shape", "square"), det.get("notes", ""), _mode_badge(state))
+            det.get("notes", ""), _mode_badge(state))
 
 
 def on_image_click(state, evt: gr.SelectData):
@@ -314,13 +313,12 @@ def on_image_click(state, evt: gr.SelectData):
         dets   = state.get("dets", [])
         det    = dets[sel]
         scale  = state.get("disp_scale", 1.0)
-        shape  = det.get("shape", "square")
         conf   = det.get("confidence", 1.0)
         _, tile_info = state["tiles"][state["tile_idx"]]
         bbox_tile, bbox_page, bbox_norm = _disp_to_bboxes(x1, y1, x2, y2, scale, tile_info)
 
         agent.add_correction(
-            tile_hash=state["tile_hash"], action="confirm", shape=shape,
+            tile_hash=state["tile_hash"], action="confirm", shape=_SHAPE,
             bbox=bbox_norm, notes=f"user-drawn bbox|conf={conf:.2f}",
             file_path=state["file_path"], page_num=state.get("page_num", 0),
             tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
@@ -329,7 +327,7 @@ def on_image_click(state, evt: gr.SelectData):
         dets[sel]["bbox_page"] = bbox_page
         state["reviews"][sel]  = "confirmed"
 
-        save_msg_txt = f"✅ [{sel+1}] bbox saved to memory — {shape}"
+        save_msg_txt = f"✅ [{sel+1}] bbox saved to memory — column"
         return (state, _render(state), save_msg_txt,
                 _u(value=x1), _u(value=y1), _u(value=x2), _u(value=y2),
                 _u(), _u(), _u(), _u(),
@@ -337,7 +335,7 @@ def on_image_click(state, evt: gr.SelectData):
                 _u(value=save_msg_txt), _det_rows(dets, state["reviews"]), _mem_md())
     else:
         img = _render(state, preview=[x1, y1, x2, y2], preview_col=_C["new"])
-        msg = f"✏️ Box [{x1},{y1},{x2},{y2}] — set shape below and click ➕ Save New."
+        msg = f"✏️ Box [{x1},{y1},{x2},{y2}] — adjust conf/notes below and click ➕ Save New."
         return (state, img, msg,
                 _u(), _u(), _u(), _u(),
                 _u(value=x1), _u(value=y1), _u(value=x2), _u(value=y2),
@@ -352,7 +350,7 @@ def live_preview(x1, y1, x2, y2, state, col=None):
     return _render(state)
 
 
-def save_correction(judgement, conf, x1, y1, x2, y2, shape, notes, state):
+def save_correction(judgement, conf, x1, y1, x2, y2, notes, state):
     dets = state.get("dets", [])
     idx  = state.get("selected", -1)
     if idx < 0 or not dets:
@@ -366,7 +364,7 @@ def save_correction(judgement, conf, x1, y1, x2, y2, shape, notes, state):
     action = "confirm" if judgement == "correct" else "reject"
 
     agent.add_correction(
-        tile_hash=state["tile_hash"], action=action, shape=shape,
+        tile_hash=state["tile_hash"], action=action, shape=_SHAPE,
         bbox=bbox_norm, notes=notes or f"{action}|conf={conf:.2f}",
         file_path=state["file_path"], page_num=state.get("page_num", 0),
         tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
@@ -374,12 +372,12 @@ def save_correction(judgement, conf, x1, y1, x2, y2, shape, notes, state):
     dets[idx]["confidence"] = conf
     dets[idx]["bbox_tile"]  = bbox_tile
     dets[idx]["bbox_page"]  = bbox_page
-    dets[idx]["shape"]      = shape
+    dets[idx]["notes"]      = notes
     state["reviews"][idx]   = "confirmed" if action == "confirm" else "rejected"
 
     icon = "✅" if action == "confirm" else "✗"
     return (state, _render(state),
-            f"{icon} [{idx+1}] saved — {action} | {shape} | conf {conf:.0%}",
+            f"{icon} [{idx+1}] saved — {action} | column | conf {conf:.0%}",
             _det_rows(dets, state["reviews"]), _mem_md())
 
 
@@ -393,7 +391,7 @@ def reject_quick(state):
     _, tile_info = state["tiles"][state["tile_idx"]]
     bbox_norm    = _bbox_tile_to_norm(det.get("bbox_tile", [0,0,0,0]), tile_info)
     agent.add_correction(
-        tile_hash=state["tile_hash"], action="reject", shape=det.get("shape", "square"),
+        tile_hash=state["tile_hash"], action="reject", shape=_SHAPE,
         bbox=bbox_norm, notes="quick-reject",
         file_path=state["file_path"], page_num=state.get("page_num", 0),
         tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
@@ -414,7 +412,7 @@ def confirm_100(state):
     _, tile_info = state["tiles"][state["tile_idx"]]
     bbox_norm    = _bbox_tile_to_norm(det.get("bbox_tile", [0,0,0,0]), tile_info)
     agent.add_correction(
-        tile_hash=state["tile_hash"], action="confirm", shape=det.get("shape", "square"),
+        tile_hash=state["tile_hash"], action="confirm", shape=_SHAPE,
         bbox=bbox_norm, notes="confirmed-100pct",
         file_path=state["file_path"], page_num=state.get("page_num", 0),
         tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
@@ -427,7 +425,6 @@ def confirm_100(state):
 
 
 def clear_memory_ui(state):
-    """Wipe corrections table + memory.json. Detection run history (runs/columns) preserved."""
     agent.clear_all_corrections()
     state["reviews"] = {}
     return (state, _render(state),
@@ -457,7 +454,7 @@ def confirm_all(state):
         return state, _render(state), "✅ All detections already reviewed.", _det_rows(dets, state["reviews"]), _mem_md()
     agent.add_corrections_batch(
         tile_hash=state["tile_hash"],
-        corrections=[{"action": "confirm", "shape": det.get("shape","square"),
+        corrections=[{"action": "confirm", "shape": _SHAPE,
                       "bbox": _bbox_tile_to_norm(det.get("bbox_tile",[0,0,0,0]), tile_info),
                       "notes": "bulk-confirm"} for _, det in pending],
         file_path=state["file_path"], page_num=state.get("page_num", 0),
@@ -482,7 +479,7 @@ def reject_all(state):
         return state, _render(state), "✗ All detections already reviewed.", _det_rows(dets, state["reviews"]), _mem_md()
     agent.add_corrections_batch(
         tile_hash=state["tile_hash"],
-        corrections=[{"action": "reject", "shape": det.get("shape","square"),
+        corrections=[{"action": "reject", "shape": _SHAPE,
                       "bbox": _bbox_tile_to_norm(det.get("bbox_tile",[0,0,0,0]), tile_info),
                       "notes": "bulk-reject"} for _, det in pending],
         file_path=state["file_path"], page_num=state.get("page_num", 0),
@@ -509,7 +506,7 @@ def undo_last(state):
             _mem_md())
 
 
-def save_new(x1, y1, x2, y2, shape, conf, notes, state):
+def save_new(x1, y1, x2, y2, conf, notes, state):
     if not state.get("tile_hash"):
         return state, None, "⚠️ Detect a tile first.", _det_rows(state.get("dets", []), {}), _mem_md()
     if x1 >= x2 or y1 >= y2:
@@ -520,20 +517,20 @@ def save_new(x1, y1, x2, y2, shape, conf, notes, state):
     bbox_tile, bbox_page, bbox_norm = _disp_to_bboxes(x1, y1, x2, y2, scale, tile_info)
 
     agent.add_correction(
-        tile_hash=state["tile_hash"], action="add", shape=shape,
-        bbox=bbox_norm, notes=notes or f"user-added {shape}|conf={conf:.2f}",
+        tile_hash=state["tile_hash"], action="add", shape=_SHAPE,
+        bbox=bbox_norm, notes=notes or f"user-added {_SHAPE}|conf={conf:.2f}",
         file_path=state["file_path"], page_num=state.get("page_num", 0),
         tile_index=tile_info.index, x_offset=tile_info.x_offset, y_offset=tile_info.y_offset,
     )
     new_det = {"bbox_tile": bbox_tile, "bbox_page": bbox_page,
-               "shape": shape, "confidence": conf, "notes": notes or f"user-added {shape}"}
+               "shape": _SHAPE, "confidence": conf, "notes": notes or f"user-added {_SHAPE}"}
     state["dets"].append(new_det)
     new_idx = len(state["dets"]) - 1
     state["reviews"][new_idx] = "confirmed"
     state["selected"] = new_idx
 
     return (state, _render(state),
-            f"➕ New {shape} added — saved to memory. LLM uses this next run.",
+            "➕ New column added — saved to memory. LLM uses this next run.",
             _det_rows(state["dets"], state["reviews"]), _mem_md())
 
 
@@ -643,7 +640,6 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
                     y1_sl = gr.Slider(0, _MAX_DISP, value=0,   step=1, label="y1")
                     x2_sl = gr.Slider(0, _MAX_DISP, value=100, step=1, label="x2")
                     y2_sl = gr.Slider(0, _MAX_DISP, value=100, step=1, label="y2")
-                shape_dd  = gr.Dropdown(_SHAPES, value="square", label="Shape")
                 notes_in  = gr.Textbox(label="Notes", lines=1)
                 with gr.Row():
                     save_btn      = gr.Button("💾 Save Correction",  variant="primary", scale=2)
@@ -662,9 +658,7 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
                     ny1 = gr.Slider(0, _MAX_DISP, value=0,   step=1, label="y1")
                     nx2 = gr.Slider(0, _MAX_DISP, value=100, step=1, label="x2")
                     ny2 = gr.Slider(0, _MAX_DISP, value=100, step=1, label="y2")
-                with gr.Row():
-                    n_shape = gr.Dropdown(_SHAPES, value="square", label="Shape", scale=2)
-                    n_conf  = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Conf", scale=3)
+                n_conf  = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Conf")
                 n_notes  = gr.Textbox(label="Notes", lines=1)
                 add_btn  = gr.Button("➕ Save New Detection", variant="primary")
 
@@ -697,7 +691,7 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
 
         det_table.select(select_row, [state],
                          [state, tile_out, sel_info, conf_sl,
-                          x1_sl, y1_sl, x2_sl, y2_sl, shape_dd, notes_in, mode_badge])
+                          x1_sl, y1_sl, x2_sl, y2_sl, notes_in, mode_badge])
 
         tile_out.select(on_image_click, [state],
                         [state, tile_out, detect_msg,
@@ -714,7 +708,7 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
                      [nx1, ny1, nx2, ny2, state], [tile_out])
 
         save_btn.click(save_correction,
-                       [judgement, conf_sl, x1_sl, y1_sl, x2_sl, y2_sl, shape_dd, notes_in, state],
+                       [judgement, conf_sl, x1_sl, y1_sl, x2_sl, y2_sl, notes_in, state],
                        [state, tile_out, save_msg, det_table, mem_out])
 
         reject_btn.click(reject_quick, [state],
@@ -733,7 +727,7 @@ def build_ui(default_pdf="", default_page=0, default_model=agent.DEFAULT_MODEL):
                        [state, tile_out, save_msg, mem_out])
 
         add_btn.click(save_new,
-                      [nx1, ny1, nx2, ny2, n_shape, n_conf, n_notes, state],
+                      [nx1, ny1, nx2, ny2, n_conf, n_notes, state],
                       [state, tile_out, detect_msg, det_table, mem_out])
 
         prev_btn.click(lambda s: nav(-1, s), [state],

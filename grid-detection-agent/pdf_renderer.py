@@ -2,6 +2,7 @@
 PDF → PNG image conversion utility using pdf2image (poppler backend).
 """
 
+import os
 import tempfile
 from pdf2image import convert_from_path, pdfinfo_from_path
 from pdf2image.exceptions import PDFInfoNotInstalledError
@@ -30,7 +31,6 @@ def pdf_to_images(pdf_path: str, dpi: int = 200) -> list[str]:
             "poppler-utils is required. Install with: sudo apt install poppler-utils"
         )
 
-    import os
     out_dir = tempfile.mkdtemp(prefix="grid_agent_")
     image_paths = []
     for i, page in enumerate(pages):

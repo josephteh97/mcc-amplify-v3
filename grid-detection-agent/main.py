@@ -44,19 +44,17 @@ def parse_args():
 
 def annotate_image(pdf_path: str, result: dict) -> str:
     """
-    Draw the detected grid labels at the approximate margin positions on
-    the first rendered page of the floor plan.
+    Draw the detected grid labels at the approximate margin positions on the
+    floor plan image already rendered by agent.run().
 
     Returns the path to the saved annotated image.
     """
-    import pdf_renderer
-
-    images = pdf_renderer.pdf_to_images(pdf_path, dpi=200)
-    if not images:
-        print("Warning: could not render PDF for annotation.", file=sys.stderr)
+    image_path = result.get("_rendered_image")
+    if not image_path:
+        print("Warning: no rendered image in result — skipping annotation.", file=sys.stderr)
         return ""
 
-    img = Image.open(images[0]).convert("RGB")
+    img = Image.open(image_path).convert("RGB")
     draw = ImageDraw.Draw(img)
     w, h = img.size
 
@@ -68,7 +66,6 @@ def annotate_image(pdf_path: str, result: dict) -> str:
     vertical_labels = result.get("vertical_labels", [])
     horizontal_labels = result.get("horizontal_labels", [])
 
-    # Draw vertical labels (columns) along the top margin, evenly spaced
     if vertical_labels:
         n = len(vertical_labels)
         step = w // (n + 1)
@@ -78,7 +75,6 @@ def annotate_image(pdf_path: str, result: dict) -> str:
             draw.rectangle([x - 20, y, x + 20, y + 34], fill=(255, 255, 0))
             draw.text((x - 15, y + 2), label, fill=(0, 0, 0), font=font)
 
-    # Draw horizontal labels (rows) along the left margin, evenly spaced
     if horizontal_labels:
         n = len(horizontal_labels)
         step = h // (n + 1)
@@ -99,14 +95,12 @@ def annotate_image(pdf_path: str, result: dict) -> str:
 def main():
     args = parse_args()
 
-    # Validate PDF
     if not os.path.isfile(args.pdf):
         print(f"Error: PDF file not found: {args.pdf}", file=sys.stderr)
         sys.exit(1)
     if not args.pdf.lower().endswith(".pdf"):
         print(f"Warning: file does not have a .pdf extension: {args.pdf}", file=sys.stderr)
 
-    # ollama_client verifies SEA-LION availability on import
     try:
         import agent
     except RuntimeError as exc:
@@ -119,10 +113,8 @@ def main():
 
     result = agent.run(args.pdf, verbose=args.verbose)
 
-    # Print final JSON to stdout
     print(json.dumps(result, indent=2))
 
-    # Annotate if requested
     if args.annotate:
         out_path = annotate_image(args.pdf, result)
         if out_path:

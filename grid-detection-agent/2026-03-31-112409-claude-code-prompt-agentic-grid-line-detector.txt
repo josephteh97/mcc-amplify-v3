@@ -1,0 +1,2995 @@
+ ▐▛███▜▌   Claude Code v2.1.88
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/Documents/mcc-amplify-v2/grid-detection-agent
+
+❯ # Claude Code Prompt: Agentic Grid Line Detector for Construction Floor Plans 
+                                                                                
+## Context & Goal                                                               
+                                                                                
+You are building an **agentic workflow** that processes PDF construction floor  
+plans and detects grid lines the way a human would — by looking at the drawing, 
+ reading the labels, and counting the lines.                                    
+                                                                                
+There is **no algorithm to implement upfront**. There is **no ground truth      
+dataset**. The agent receives a PDF, renders it as an image, and uses SEA-LION  
+(local Ollama vision model) to visually understand the drawing and return the   
+grid line count and their label text.                                           
+                                                                                
+The reference notebook `~/Documents/test-grid-detector/final_success.ipynb` is  
+a **fallback reference**. The agent should first attempt to detect grid lines   
+purely through visual reasoning. If it gets stuck, produces low-confidence      
+results, or cannot make sense of a drawing, it may read the notebook to         
+understand how a working approach solved the same problem and use that as a     
+hint to guide its next attempt.                                                 
+                                                                                
+This is a **sub-project** inside a larger monorepo:                             
+- Append new dependencies to **`../requirements.txt`** — do not create a local  
+one                                                                             
+- Add the sub-project section to **`../README.md`** — do not create a local     
+README.md                                                                       
+- Do not remove or overwrite any existing lines in either file                  
+                                                                                
+---                                                                             
+                                                                                
+## Step 0: Read the Reference Notebook (On-Demand, Not Upfront)                 
+                                                                                
+The agent should **not** read the notebook before trying. It reads it only when 
+ needed — when confidence is persistently low or the drawing is confusing.      
+                                                                                
+To make the notebook available to the agent at runtime, load its content as     
+readable text that can be passed to SEA-LION as context:                        
+                                                                                
+```bash                                                                         
+jupyter nbconvert --to script                                                   
+~/Documents/test-grid-detector/final_success.ipynb --stdout >                   
+/tmp/reference_approach.py                                                      
+```                                                                             
+                                                                                
+In `agent.py`, implement a `tool_read_reference()` function that:               
+- Reads `/tmp/reference_approach.py`                                            
+- Extracts the meaningful logic sections (strips boilerplate, imports, display  
+calls)                                                                          
+- Returns a concise summary string the agent can include in its next SEA-LION   
+prompt as a hint                                                                
+                                                                                
+The agent passes this hint to SEA-LION like: *"A previous approach that worked  
+on a similar floor plan did the following: {hint}. Use this as guidance and try 
+ again."*                                                                       
+                                                                                
+This way the notebook is a **hint of last resort**, not a blueprint the agent   
+blindly follows.                                                                
+                                                                                
+---                                                                             
+                                                                                
+## Step 1: Project Structure                                                    
+                                                                                
+Flat and minimal — five files, no subdirectories:                               
+                                                                                
+```                                                                             
+grid-detector-agent/                                                            
+├── main.py                   # CLI entry point                                 
+├── agent.py                                                                    
+… +357 lines …                                                                  
+one side. Inspect Section 4 crops manually."                                    
+                                                                                
+# 4. Uncertain labels (containing "?")                                          
+#    → "N label(s) flagged as uncertain by SEA-LION: [list].                    
+#       Inspect the relevant margin crop in Section 4."                         
+                                                                                
+# 5. Multiple retries triggered                                                 
+#    → "Agent retried N times before reaching a confident result.               
+#       Consider whether this PDF's image quality or label style needs          
+#       a higher DPI or a prompt adjustment."                                   
+                                                                                
+# 6. All clear                                                                  
+#    → "High confidence detection. No improvement actions needed."              
+                                                                                
+print("## Improvement areas:")                                                  
+for finding in findings:                                                        
+    print(f"  • {finding}")                                                     
+```                                                                             
+                                                                                
+---                                                                             
+                                                                                
+### Notebook conventions                                                        
+- Every section starts with a Markdown cell: title + one-sentence purpose       
+- Floor plan plots: `figsize=(16, 12)` minimum                                  
+- `Restart & Run All` must complete without errors                              
+- If SEA-LION is offline: print a clear warning, skip vision sections           
+gracefully, do not raise                                                        
+                                                                                
+---                                                                             
+                                                                                
+## Step 8: Final Check                                                          
+                                                                                
+```bash                                                                         
+# Run the agent                                                                 
+python main.py --pdf ~/Documents/test-grid-detector/sample.pdf --verbose        
+--annotate                                                                      
+                                                                                
+# Open the evaluation notebook                                                  
+jupyter notebook test_grid_detection.ipynb                                      
+```                                                                             
+                                                                                
+Visually compare the annotated image and the detection summary against the      
+actual floor plan. The agent should read the labels the way you would — no      
+algorithm, just vision.                                                         
+                                                                                
+---                                                                             
+                                                                                
+## Key Constraints                                                              
+                                                                                
+1. **Vision first, algorithm never** — SEA-LION looks at the image and reads it 
+ like a human. No Hough transforms, no thresholding, no hardcoded detection     
+rules.                                                                          
+2. **Reference notebook is a fallback, not a blueprint** — the agent only       
+consults `final_success.ipynb` when it cannot reach confident results on its    
+own. It uses the notebook as a hint passed to SEA-LION, not as code to execute. 
+3. **No ground truth dataset** — the notebook shows what was detected; the user 
+ judges it visually                                                             
+4. **SEA-LION is the only detector** — it is not a validator on top of another  
+method                                                                          
+5. **Local only** — all inference via `http://localhost:11434`, no external API 
+ calls                                                                          
+6. **5 files, flat structure** — `main.py`, `agent.py`, `pdf_renderer.py`,      
+`ollama_client.py`, `test_grid_detection.ipynb`                                 
+7. **Dependencies → `../requirements.txt`**, README → `../README.md`; no local  
+copies                                                                          
+8. **Confirm SEA-LION model tag** with `ollama list` before hardcoding anywhere 
+9. **Notebook improvement areas must be dynamic** — generated from actual       
+results, not hardcoded                                                          
+10. **`used_reference_hint: true`** must appear in verbose output whenever the  
+fallback was triggered, so the user knows the agent needed a hint               
+
+● Bash(ls /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent/ && echo
+      "---" && ls /home/jiezhi/Documents/mcc-amplify-v2/ && echo "---" && ollama
+       list 2>/dev/nu…)
+  ⎿  ---
+     grid-detection-agent
+     pdf_detection_agent
+     … +22 lines (ctrl+o to expand)
+
+  Listed 1 directory (ctrl+o to expand)
+
+● The SEA-LION model is aisingapore/Gemma-SEA-LION-v4-4B-VL:latest. The
+  grid-detection-agent directory is empty. Let me build all five files now.
+
+● Write(ollama_client.py)
+  ⎿  Wrote 123 lines to ollama_client.py
+       1 """
+       2 Thin wrapper around the local Ollama HTTP API for SEA-LION visio
+         n queries.
+       3 """
+       4 
+       5 import base64
+       6 import time
+       7 import json
+       8 import requests
+       9 
+      10 # ── CONFIGURATION ─────────────────────────────────────────────
+         ───────────────
+     … +113 lines (ctrl+o to expand)
+
+● Write(pdf_renderer.py)
+  ⎿  Wrote 60 lines to pdf_renderer.py
+      1 """
+      2 PDF → PNG image conversion utility using pdf2image (poppler backe
+        nd).
+      3 """
+      4 
+      5 import os
+      6 import tempfile
+      7 from pdf2image import convert_from_path
+      8 from pdf2image.exceptions import PDFInfoNotInstalledError
+      9 
+     … +50 lines (ctrl+o to expand)
+
+● Write(agent.py)
+  ⎿  Wrote 487 lines to agent.py
+       1 """
+       2 Agentic grid line detector — all orchestration, prompts, and too
+         ls live here.
+       3 """
+       4 
+       5 import json
+       6 import os
+       7 import re
+       8 import tempfile
+       9 
+      10 from PIL import Image
+     … +477 lines (ctrl+o to expand)
+
+● Write(main.py)
+  ⎿  Wrote 133 lines to main.py
+       1 """
+       2 CLI entry point for the agentic grid line detector.
+       3 
+       4 Usage:
+       5     python main.py --pdf path/to/floorplan.pdf [--verbose] [--an
+         notate]
+       6 """
+       7 
+       8 import argparse
+       9 import json
+      10 import os
+     … +123 lines (ctrl+o to expand)
+
+● Now the notebook — the most complex piece:
+
+● Write(test_grid_detection.ipynb)
+  ⎿  Wrote 514 lines to test_grid_detection.ipynb
+       1 {
+       2  "cells": [
+       3   {
+       4    "cell_type": "markdown",
+       5    "metadata": {},
+       6    "source": [
+       7     "# Grid Line Detection — Interactive Evaluation Notebook\n",
+       8     "\n",
+       9     "Use this notebook to inspect how well the agent reads grid 
+         lines from your floor plan PDF.\n",
+      10     "There is no ground truth — you judge the results visually a
+         gainst the rendered drawing.\n",
+     … +504 lines (ctrl+o to expand)
+
+● Now the parent-level files:
+
+● Write(~/Documents/mcc-amplify-v2/requirements.txt)
+  ⎿  Wrote 4 lines to ../requirements.txt
+      1 # grid-detection-agent
+      2 pdf2image
+      3 Pillow
+      4 requests
+
+● Write(~/Documents/mcc-amplify-v2/README.md)
+  ⎿  Wrote 34 lines to ../README.md
+       1 ## Grid Detector Agent (`grid-detection-agent/`)
+       2 
+       3 Agentic workflow that reads PDF construction floor plans and det
+         ects grid lines
+       4 the way a human analyst would — by visually examining the drawin
+         g and reading
+       5 the margin labels.
+       6 
+       7 **How it works:**
+       8 The agent renders the floor plan as an image and uses SEA-LION (
+         local Ollama
+       9 vision model) to identify grid line labels. It verifies its own 
+         answer with a
+      10 second pass, scans individual margins when uncertain, and reconc
+         iles any
+     … +24 lines (ctrl+o to expand)
+
+● Let me do a final sanity check on the file structure:
+
+● Bash(ls -la /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent/ &&
+      echo "---" && python3 -c "
+      import ast, sys…)
+  ⎿  total 64
+     drwxrwxr-x 2 jiezhi jiezhi  4096 Mar 30 17:16 .
+     drwxrwxr-x 5 jiezhi jiezhi  4096 Mar 30 17:16 ..
+     … +11 lines (ctrl+o to expand)
+
+● All five files created, all syntax-clean. Here's a summary of what was built:
+
+  ---
+  What was built
+
+  Model confirmed: aisingapore/Gemma-SEA-LION-v4-4B-VL:latest (already present
+  in your Ollama instance).
+
+  Files created
+
+  ┌───────────────────────────┬──────────────────────────────────────────────┐
+  │           File            │                     Role                     │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │                           │ SEA-LION wrapper — query_vision() /          │
+  │ ollama_client.py          │ query_text(), 3x retry with exponential      │
+  │                           │ backoff, startup model check                 │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │ pdf_renderer.py           │ pdf_to_images() + get_page_count() via       │
+  │                           │ pdf2image                                    │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │ agent.py                  │ All prompts, tools, and agentic loop         │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │ main.py                   │ CLI: --pdf, --verbose, --annotate            │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │ test_grid_detection.ipynb │ 7-section evaluation notebook                │
+  └───────────────────────────┴──────────────────────────────────────────────┘
+
+  Agent loop (Steps 1–7)
+
+  1. Render PDF → images (200 DPI default)
+  2. Initial detection — full floor plan → SEA-LION → JSON
+  3. Verify — second pass; flags discrepancy if result changed
+  4. Margin scan — if confidence < 0.85 or discrepancy: crop all 4 margins, scan
+   each, reconcile
+  5. Reference fallback — if still uncertain: read final_success.ipynb hint,
+  re-query with hint in prompt; sets used_reference_hint: true
+  6. Retry at 300 DPI — if still low confidence, up to MAX_RETRIES=3 total
+  7. Finalize — label counts reconciled, steps_taken included when --verbose
+
+  Quick start
+
+  # Generate the reference hint script (only needed if Step 5 triggers)
+  jupyter nbconvert --to script
+  ~/Documents/test-grid-detector/final_success.ipynb --stdout >
+  /tmp/reference_approach.py
+
+  cd grid-detection-agent
+  python main.py --pdf ~/Documents/test-grid-detector/sample.pdf --verbose
+  --annotate
+
+✻ Worked for 4m 17s
+
+❯ /simplify                                                                     
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2 && git diff HEAD)
+  ⎿  diff --git a/pdf_detection_agent/agent.py b/pdf_detection_agent/agent.
+     py
+     index 195ea8a..455d5e8 100644
+     … +64 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2 && git status && git diff --stat
+       HEAD)
+  ⎿  On branch main
+     Your branch is up to date with 'origin/main'.
+     … +15 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+● The new files are untracked. I'll read them and pass all context to three
+  parallel review agents.
+
+  Read 1 file (ctrl+o to expand)
+
+● 3 background agents launched (↓ to manage)
+   ├─ Code reuse review
+   ├─ Code quality review
+   └─ Efficiency review
+● Waiting for all three review agents to complete...
+
+✻ Crunched for 2m 3s
+
+● Agent "Code reuse review" completed
+
+● Agent "Code quality review" completed
+
+● Still waiting for the efficiency review...
+
+● Agent "Efficiency review" completed
+
+● All three done. Let me aggregate and fix the real issues now.
+
+  Fixes to apply:
+  1. _chat(): string concat → list + join (O(n) instead of O(n²))
+  2. query_vision / query_text: merge into one _query internal helper
+  3. _parse_json_response + _parse_label_array: unify into one parameterized
+  helper
+  4. PAGE_SELECTION_PROMPT: dead code, delete
+  5. tool_zoom_margin(): temp file leaked on exception → try/finally
+  6. Four margin scans: sequential → parallel with ThreadPoolExecutor
+  7. tool_read_reference(): re-reads/processes file on every call → cache
+  8. reconciled["_margin_results"]: internal metadata leaked into result dict →
+  move to verbose output
+  9. annotate_image(): re-renders PDF → reuse floor plan image from agent
+  10. import pdf_renderer inside function → module level
+  11. TOCTOU check in pdf_renderer.pdf_to_images → remove
+  12. pdfinfo_from_path import inside function → module level
+
+  Read 4 files (ctrl+o to expand)
+
+● Now I'll apply all fixes. Starting with all four files in sequence:
+
+● Write(ollama_client.py)
+  ⎿  Added 18 lines, removed 52 lines
+       51              )
+       52              resp.raise_for_status()
+       53  
+       54 -            # Ollama streams NDJSON by default; collect all ch
+          -unks                                                          
+       55 -            full_text = ""                                    
+       54 +            # Ollama streams NDJSON; accumulate chunks then jo
+          +in once                                                       
+       55 +            chunks = []                                       
+       56              for line in resp.text.strip().splitlines():
+       57                  if not line:
+       58                      continue
+       59                  chunk = json.loads(line)
+       60 -                content = chunk.get("message", {}).get("conten
+          -t", "")                                                       
+       61 -                full_text += content                          
+       60 +                chunks.append(chunk.get("message", {}).get("co
+          +ntent", ""))                                                  
+       61                  if chunk.get("done", False):
+       62                      break
+       64 -            return full_text.strip()                          
+       63 +            return "".join(chunks).strip()                    
+       64  
+       65          except (requests.exceptions.RequestException, json.JSO
+           NDecodeError) as exc:
+       66              if attempt == MAX_RETRIES - 1:
+       67                  raise RuntimeError(f"Ollama request failed aft
+           er {MAX_RETRIES} attempts: {exc}")
+       69 -            wait = BACKOFF_BASE ** attempt                    
+       70 -            time.sleep(wait)                                  
+       68 +            time.sleep(BACKOFF_BASE ** attempt)               
+       69  
+       70  
+       71 +def _query(prompt: str, image_path: str = None) -> str:       
+       72 +    """Build and send a chat payload, optionally with an image
+          +."""                                                          
+       73 +    message = {"role": "user", "content": prompt}             
+       74 +    if image_path is not None:                                
+       75 +        with open(image_path, "rb") as f:                     
+       76 +            message["images"] = [base64.b64encode(f.read()).de
+          +code("utf-8")]                                                
+       77 +    return _chat({"model": MODEL, "messages": [message], "stre
+          +am": True})                                                   
+       78 +                                                              
+       79 +                                                              
+       80  # ── PUBLIC API ──────────────────────────────────────────────
+           ──────────────────
+       81  
+       82  def query_vision(image_path: str, prompt: str) -> str:
+       76 -    """                                                       
+       77 -    Send an image + text prompt to SEA-LION and return the tex
+          -t response.                                                   
+       83 +    """Send an image + text prompt to SEA-LION and return the 
+          +text response."""                                             
+       84 +    return _query(prompt, image_path=image_path)              
+       85  
+       79 -    Args:                                                     
+       80 -        image_path: Absolute path to a PNG/JPEG image file.   
+       81 -        prompt: The text instruction to accompany the image.  
+       86  
+       83 -    Returns:                                                  
+       84 -        The model's text response as a string.                
+       85 -    """                                                       
+       86 -    with open(image_path, "rb") as f:                         
+       87 -        image_b64 = base64.b64encode(f.read()).decode("utf-8")
+       88 -                                                              
+       89 -    payload = {                                               
+       90 -        "model": MODEL,                                       
+       91 -        "messages": [                                         
+       92 -            {                                                 
+       93 -                "role": "user",                               
+       94 -                "content": prompt,                            
+       95 -                "images": [image_b64],                        
+       96 -            }                                                 
+       97 -        ],                                                    
+       98 -        "stream": True,                                       
+       99 -    }                                                         
+      100 -    return _chat(payload)                                     
+      101 -                                                              
+      102 -                                                              
+       87  def query_text(prompt: str) -> str:
+      104 -    """                                                       
+      105 -    Send a text-only prompt to SEA-LION and return the text re
+          -sponse.                                                       
+      106 -                                                              
+      107 -    Args:                                                     
+      108 -        prompt: The text instruction.                         
+      109 -                                                              
+      110 -    Returns:                                                  
+      111 -        The model's text response as a string.                
+      112 -    """                                                       
+      113 -    payload = {                                               
+      114 -        "model": MODEL,                                       
+      115 -        "messages": [                                         
+      116 -            {                                                 
+      117 -                "role": "user",                               
+      118 -                "content": prompt,                            
+      119 -            }                                                 
+      120 -        ],                                                    
+      121 -        "stream": True,                                       
+      122 -    }                                                         
+      123 -    return _chat(payload)                                     
+       88 +    """Send a text-only prompt to SEA-LION and return the text
+          + response."""                                                 
+       89 +    return _query(prompt)                                     
+
+● Write(pdf_renderer.py)
+  ⎿  Added 4 lines, removed 18 lines
+       2  PDF → PNG image conversion utility using pdf2image (poppler bac
+          kend).
+       3  """
+       4  
+       5 -import os                                                      
+       5  import tempfile
+       7 -from pdf2image import convert_from_path                        
+       6 +from pdf2image import convert_from_path, pdfinfo_from_path     
+       7  from pdf2image.exceptions import PDFInfoNotInstalledError
+       8  
+       9  
+     ...
+      22  
+      23      Raises:
+      24          PDFInfoNotInstalledError: If poppler-utils is not insta
+          lled.
+      26 -        FileNotFoundError: If the PDF path does not exist.     
+      25      """
+      28 -    if not os.path.isfile(pdf_path):                           
+      29 -        raise FileNotFoundError(f"PDF not found: {pdf_path}")  
+      30 -                                                               
+      26      try:
+      27          pages = convert_from_path(pdf_path, dpi=dpi)
+      28      except PDFInfoNotInstalledError:
+     ...
+      30              "poppler-utils is required. Install with: sudo apt 
+          install poppler-utils"
+      31          )
+      32  
+      33 +    import os                                                  
+      34      out_dir = tempfile.mkdtemp(prefix="grid_agent_")
+      35      image_paths = []
+      36      for i, page in enumerate(pages):
+     ...
+      42  
+      43  
+      44  def get_page_count(pdf_path: str) -> int:
+      49 -    """                                                        
+      50 -    Return the number of pages in a PDF without rendering them.
+      51 -                                                               
+      52 -    Args:                                                      
+      53 -        pdf_path: Path to the PDF file.                        
+      54 -                                                               
+      55 -    Returns:                                                   
+      56 -        Integer page count.                                    
+      57 -    """                                                        
+      58 -    from pdf2image import pdfinfo_from_path                    
+      59 -    info = pdfinfo_from_path(pdf_path)                         
+      60 -    return info["Pages"]                                       
+      45 +    """Return the number of pages in a PDF without rendering th
+         +em."""                                                         
+      46 +    return pdfinfo_from_path(pdf_path)["Pages"]                
+
+● Write(agent.py)
+  ⎿  Added 92 lines, removed 104 lines
+       6  import os
+       7  import re
+       8  import tempfile
+       9 +from concurrent.futures import ThreadPoolExecutor, as_completed
+      10  
+      11  from PIL import Image
+      12  
+     ...
+      18  CONFIDENCE_THRESHOLD = 0.85
+      19  MAX_RETRIES = 3
+      20  REFERENCE_SCRIPT = "/tmp/reference_approach.py"
+      20 -                                                               
+      21 -# Fraction of each image dimension used as the margin band widt
+         -h                                                              
+      21  MARGIN_FRACTION = 0.12
+      22  
+      23 +_reference_hint_cache: str | None = None                       
+      24  
+      25 +                                                               
+      26  # ── PROMPTS ──────────────────────────────────────────────────
+          ─────────────────
+      27  
+      28  SYSTEM_PROMPT = """
+     ...
+      73  Return ONLY a JSON array of label strings, e.g. ["A", "B", "C"]
+           or ["1", "2", "3"].
+      74  """
+      75  
+      75 -PAGE_SELECTION_PROMPT = """                                    
+      76 -You are looking at thumbnail images of a multi-page PDF documen
+         -t (page numbers are labelled).                                 
+      77 -Which page number contains the primary architectural floor plan
+         - — the plan view showing the                                   
+      78 -structural grid from above?                                    
+      79 -                                                               
+      80 -Return ONLY a JSON object: {{"page": <int>}}                   
+      81 -"""                                                            
+      82 -                                                               
+      76  RECONCILE_PROMPT = """
+      77  You have performed multiple passes on a floor plan to detect gr
+          id lines.
+      78  Here are all the results:
+     ...
+      121  
+      122  
+      123  def tool_detect_grid(image_path: str, extra_prompt: str = "") 
+           -> dict:
+      131 -    """                                                       
+      132 -    Send the full floor plan image to SEA-LION for initial gri
+          -d detection.                                                  
+      133 -    Returns the parsed JSON result dict.                      
+      134 -    """                                                       
+      124 +    """Send the full floor plan image to SEA-LION for initial 
+          +grid detection."""                                            
+      125      prompt = extra_prompt if extra_prompt else SYSTEM_PROMPT
+      126      raw = ollama_client.query_vision(image_path, prompt)
+      137 -    return _parse_json_response(raw)                          
+      127 +    return _parse_json(raw)                                   
+      128  
+      129  
+      130  def tool_verify(image_path: str, previous_result: dict) -> dic
+           t:
+      141 -    """                                                       
+      142 -    Second-pass verification: send the image + previous result
+          - back to SEA-LION.                                            
+      143 -    Returns a corrected or confirmed result dict.             
+      144 -    """                                                       
+      131 +    """Second-pass verification: send the image + previous res
+          +ult back to SEA-LION."""                                      
+      132      prompt = VERIFICATION_PROMPT.format(
+      133          previous_result=json.dumps(previous_result, indent=2)
+      134      )
+      135      raw = ollama_client.query_vision(image_path, prompt)
+      149 -    return _parse_json_response(raw)                          
+      136 +    return _parse_json(raw)                                   
+      137  
+      138  
+      139  def tool_zoom_margin(image_path: str, side: str) -> dict:
+     ...
+      162  
+      163      crop = img.crop(boxes[side])
+      164      tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=Fa
+           lse, prefix=f"margin_{side}_")
+      178 -    crop.save(tmp.name, "PNG")                                
+      165 +    tmp_path = tmp.name                                       
+      166 +    crop.save(tmp_path, "PNG")                                
+      167      tmp.close()
+      168  
+      181 -    prompt = ZOOMED_PROMPT.format(side=side)                  
+      182 -    raw = ollama_client.query_vision(tmp.name, prompt)        
+      183 -    os.unlink(tmp.name)                                       
+      169 +    try:                                                      
+      170 +        prompt = ZOOMED_PROMPT.format(side=side)              
+      171 +        raw = ollama_client.query_vision(tmp_path, prompt)    
+      172 +    finally:                                                  
+      173 +        os.unlink(tmp_path)                                   
+      174  
+      185 -    labels = _parse_label_array(raw)                          
+      186 -    return {"labels": labels}                                 
+      175 +    return {"labels": _parse_json(raw, array=True)}           
+      176  
+      177  
+      178  def tool_reconcile(full_result: dict, margin_results: dict) ->
+            dict:
+     ...
+      194          right=margin_results.get("right", []),
+      195      )
+      196      raw = ollama_client.query_text(prompt)
+      208 -    return _parse_json_response(raw)                          
+      197 +    return _parse_json(raw)                                   
+      198  
+      199  
+      200  def tool_read_reference() -> str:
+     ...
+      206          "A previous approach that worked on a similar floor pl
+           an did the following:
+      207           {hint}. Use this as guidance and try again."
+      208      """
+      209 +    global _reference_hint_cache                              
+      210 +    if _reference_hint_cache is not None:                     
+      211 +        return _reference_hint_cache                          
+      212 +                                                              
+      213      if not os.path.isfile(REFERENCE_SCRIPT):
+      214          return (
+      215              "Reference script not available. "
+     ...
+      221      with open(REFERENCE_SCRIPT) as f:
+      222          code = f.read()
+      223  
+      231 -    # Strip boilerplate: imports, display calls, get_ipython()
+          -, blank-heavy blocks                                          
+      232 -    lines = []                                                
+      233 -    skip_patterns = [                                         
+      224 +    skip_re = re.compile("|".join([                           
+      225          r"^\s*import ",
+      226          r"^\s*from \w+ import",
+      227          r"^\s*get_ipython\(",
+     ...
+      233          r"^\s*print\(",
+      234          r"^\s*IPython",
+      235          r"^\s*%",
+      245 -    ]                                                         
+      246 -    skip_re = re.compile("|".join(skip_patterns))             
+      236 +    ]))                                                       
+      237  
+      248 -    for line in code.splitlines():                            
+      249 -        if skip_re.match(line):                               
+      250 -            continue                                          
+      251 -        lines.append(line)                                    
+      238 +    cleaned = re.sub(                                         
+      239 +        r"\n{3,}",                                            
+      240 +        "\n\n",                                               
+      241 +        "\n".join(line for line in code.splitlines() if not sk
+          +ip_re.match(line)),                                           
+      242 +    ).strip()                                                 
+      243  
+      253 -    cleaned = "\n".join(lines)                                
+      254 -    # Collapse multiple blank lines                           
+      255 -    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()      
+      256 -                                                              
+      257 -    # Summarise via SEA-LION text query so the hint is concise
+      244      summary_prompt = (
+      245          "The following is Python code from a working grid line
+            detector for "
+      246          "construction floor plans. Summarise in 3-5 bullet poi
+           nts the KEY STEPS "
+     ...
+      248          "model should look for, not on implementation details.
+           \n\n"
+      249          f"```python\n{cleaned[:4000]}\n```"
+      250      )
+      265 -    return ollama_client.query_text(summary_prompt)           
+      251 +    _reference_hint_cache = ollama_client.query_text(summary_p
+          +rompt)                                                        
+      252 +    return _reference_hint_cache                              
+      253  
+      254  
+      255  # ── INTERNAL HELPERS ────────────────────────────────────────
+           ──────────────────
+      256  
+      270 -def _parse_json_response(raw: str) -> dict:                   
+      271 -    """Extract and parse the first JSON object from a model re
+          -sponse string."""                                             
+      272 -    # Strip markdown fences if present                        
+      273 -    raw = re.sub(r"```(?:json)?", "", raw).strip()            
+      274 -    # Find first { ... } block                                
+      275 -    match = re.search(r"\{.*\}", raw, re.DOTALL)              
+      276 -    if not match:                                             
+      277 -        return {                                              
+      278 -            "total_grid_lines": 0,                            
+      279 -            "vertical_labels": [],                            
+      280 -            "horizontal_labels": [],                          
+      281 -            "confidence": 0.0,                                
+      282 -            "notes": f"Could not parse JSON from response: {ra
+          -w[:200]}",                                                    
+      283 -        }                                                     
+      284 -    try:                                                      
+      285 -        return json.loads(match.group())                      
+      286 -    except json.JSONDecodeError as exc:                       
+      287 -        return {                                              
+      288 -            "total_grid_lines": 0,                            
+      289 -            "vertical_labels": [],                            
+      290 -            "horizontal_labels": [],                          
+      291 -            "confidence": 0.0,                                
+      292 -            "notes": f"JSON parse error: {exc}. Raw: {raw[:200
+          -]}",                                                          
+      293 -        }                                                     
+      257 +def _parse_json(raw: str, array: bool = False):               
+      258 +    """                                                       
+      259 +    Extract and parse the first JSON object or array from a mo
+          +del response string.                                          
+      260  
+      261 +    Args:                                                     
+      262 +        raw: Raw model output, possibly wrapped in markdown fe
+          +nces.                                                         
+      263 +        array: If True, search for a JSON array ([...]); other
+          +wise a JSON object ({...}).                                   
+      264  
+      296 -def _parse_label_array(raw: str) -> list:                     
+      297 -    """Extract and parse the first JSON array from a model res
+          -ponse string."""                                              
+      265 +    Returns:                                                  
+      266 +        Parsed list (array=True) or dict (array=False). Falls 
+          +back to empty on error.                                       
+      267 +    """                                                       
+      268      raw = re.sub(r"```(?:json)?", "", raw).strip()
+      299 -    match = re.search(r"\[.*?\]", raw, re.DOTALL)             
+      300 -    if not match:                                             
+      301 -        return []                                             
+      302 -    try:                                                      
+      303 -        return json.loads(match.group())                      
+      304 -    except json.JSONDecodeError:                              
+      305 -        return []                                             
+      269 +    if array:                                                 
+      270 +        match = re.search(r"\[.*?\]", raw, re.DOTALL)         
+      271 +        if not match:                                         
+      272 +            return []                                         
+      273 +        try:                                                  
+      274 +            return json.loads(match.group())                  
+      275 +        except json.JSONDecodeError:                          
+      276 +            return []                                         
+      277 +    else:                                                     
+      278 +        match = re.search(r"\{.*\}", raw, re.DOTALL)          
+      279 +        if not match:                                         
+      280 +            return {                                          
+      281 +                "total_grid_lines": 0,                        
+      282 +                "vertical_labels": [],                        
+      283 +                "horizontal_labels": [],                      
+      284 +                "confidence": 0.0,                            
+      285 +                "notes": f"Could not parse JSON from response:
+          + {raw[:200]}",                                                
+      286 +            }                                                 
+      287 +        try:                                                  
+      288 +            return json.loads(match.group())                  
+      289 +        except json.JSONDecodeError as exc:                   
+      290 +            return {                                          
+      291 +                "total_grid_lines": 0,                        
+      292 +                "vertical_labels": [],                        
+      293 +                "horizontal_labels": [],                      
+      294 +                "confidence": 0.0,                            
+      295 +                "notes": f"JSON parse error: {exc}. Raw: {raw[
+          +:200]}",                                                      
+      296 +            }                                                 
+      297  
+      298  
+      299  def _results_differ(a: dict, b: dict) -> bool:
+     ...
+      312      if len(image_paths) == 1:
+      313          return image_paths[0]
+      314  
+      324 -    # Build a simple prompt describing the thumbnails (we send
+          - page 1 as a proxy                                            
+      325 -    # for page selection to avoid sending all pages; ask the m
+          -odel to indicate                                              
+      326 -    # which page number to use based on a description)        
+      315 +    # Send only page 1 as a proxy to avoid uploading all pages
+          +; ask model to pick                                           
+      316      prompt = (
+      317          f"This PDF has {len(image_paths)} pages. "
+      318          "This image is page 1. Which page number is most likel
+           y to contain "
+     ...
+      322          'Return ONLY JSON: {"page": <int>}'
+      323      )
+      324      raw = ollama_client.query_vision(image_paths[0], prompt)
+      336 -    result = _parse_json_response(raw)                        
+      337 -    page_num = int(result.get("page", 1))                     
+      338 -    page_num = max(1, min(page_num, len(image_paths)))        
+      325 +    result = _parse_json(raw)                                 
+      326 +    page_num = max(1, min(int(result.get("page", 1)), len(imag
+          +e_paths)))                                                    
+      327      if verbose:
+      328          print(f"  [agent] Selected page {page_num} of {len(ima
+           ge_paths)} as primary floor plan.")
+      329      return image_paths[page_num - 1]
+     ...
+      341  
+      342      Returns:
+      343          dict with keys: total_grid_lines, vertical_labels, hor
+           izontal_labels,
+      356 -                        confidence, notes, and (if verbose) st
+          -eps_taken.                                                    
+      344 +                        confidence, notes, _rendered_image (pa
+          +th to floor plan PNG),                                        
+      345 +                        and (if verbose) steps_taken.         
+      346          "used_reference_hint": True is added if the fallback w
+           as triggered.
+      347      """
+      348      steps_taken = []
+     ...
+      350      attempt = 0
+      351      final_result = None
+      352      current_dpi = 200
+      353 +    floor_plan_image = None                                   
+      354  
+      355      def log(msg):
+      356          if verbose:
+     ...
+      365          log("Step 1: Rendering PDF to images.")
+      366          render_result = tool_render_pdf(pdf_path, dpi=current_
+           dpi)
+      367          image_paths = render_result["images"]
+      378 -        page_count = render_result["page_count"]              
+      379 -        log(f"  Rendered {page_count} page(s).")              
+      368 +        log(f"  Rendered {render_result['page_count']} page(s)
+          +.")                                                           
+      369  
+      370          floor_plan_image = _select_floor_plan_page(image_paths
+           , verbose)
+      371          log(f"  Using image: {os.path.basename(floor_plan_imag
+           e)}")
+     ...
+      382          log("Step 3: Verification pass.")
+      383          verified_result = tool_verify(floor_plan_image, initia
+           l_result)
+      384          discrepancy = _results_differ(initial_result, verified
+           _result)
+      396 -        if discrepancy:                                       
+      397 -            log("  Discrepancy detected between initial and ve
+          -rified results.")                                             
+      398 -        else:                                                 
+      399 -            log("  Verification confirmed initial result.")   
+      385 +        log("  Discrepancy detected." if discrepancy else "  V
+          +erification confirmed initial result.")                       
+      386          log(
+      387              f"  Verified: {verified_result.get('total_grid_lin
+           es')} lines, "
+      388              f"confidence={verified_result.get('confidence', 0)
+           :.2f}"
+     ...
+      393          # ── STEP 4: MARGIN SCAN ─────────────────────────────
+           ──────────────────
+      394          if confidence < CONFIDENCE_THRESHOLD or discrepancy:
+      395              log("Step 4: Margin scan (low confidence or discre
+           pancy).")
+      396 +                                                              
+      397 +            # All four margin scans are independent — run in p
+          +arallel                                                       
+      398 +            def _scan(side):                                  
+      399 +                return side, tool_zoom_margin(floor_plan_image
+          +, side)["labels"]                                             
+      400 +                                                              
+      401              margin_results = {}
+      411 -            for side in ("top", "bottom", "left", "right"):   
+      412 -                scan = tool_zoom_margin(floor_plan_image, side
+          -)                                                             
+      413 -                margin_results[side] = scan["labels"]         
+      414 -                log(f"  {side.capitalize()} margin: {scan['lab
+          -els']}")                                                      
+      402 +            with ThreadPoolExecutor(max_workers=4) as pool:   
+      403 +                futures = {pool.submit(_scan, s): s for s in (
+          +"top", "bottom", "left", "right")}                            
+      404 +                for future in as_completed(futures):          
+      405 +                    side, labels = future.result()            
+      406 +                    margin_results[side] = labels             
+      407 +                    log(f"  {side.capitalize()} margin: {label
+          +s}")                                                          
+      408  
+      409              log("  Reconciling full detection with margin scan
+           s.")
+      410              reconciled = tool_reconcile(verified_result, margi
+           n_results)
+     ...
+      412                  f"  Reconciled: {reconciled.get('total_grid_li
+           nes')} lines, "
+      413                  f"confidence={reconciled.get('confidence', 0):
+           .2f}"
+      414              )
+      422 -            reconciled["_margin_results"] = margin_results    
+      415              final_result = reconciled
+      416              confidence = float(reconciled.get("confidence", 0)
+           )
+      417          else:
+     ...
+      424              hint = tool_read_reference()
+      425              log(f"  Hint summary: {hint[:120]}...")
+      426  
+      435 -            hint_prompt = HINT_PROMPT.format(                 
+      436 -                system_prompt=SYSTEM_PROMPT, hint=hint        
+      437 -            )                                                 
+      427 +            hint_prompt = HINT_PROMPT.format(system_prompt=SYS
+          +TEM_PROMPT, hint=hint)                                        
+      428              hinted_result = tool_detect_grid(floor_plan_image,
+            extra_prompt=hint_prompt)
+      429              log(
+      430                  f"  After hint: {hinted_result.get('total_grid
+           _lines')} lines, "
+     ...
+      435              if float(hinted_result.get("confidence", 0)) > con
+           fidence:
+      436                  final_result = hinted_result
+      437                  confidence = float(hinted_result.get("confiden
+           ce", 0))
+      448 -        else:                                                 
+      449 -            if not used_reference_hint:                       
+      450 -                log("Step 5: Skipped (confidence is sufficient
+          -).")                                                          
+      438 +        elif not used_reference_hint:                         
+      439 +            log("Step 5: Skipped (confidence is sufficient).")
+      440  
+      441          # ── STEP 6: RETRY AT HIGHER DPI ─────────────────────
+           ──────────────────
+      442          if confidence >= CONFIDENCE_THRESHOLD:
+     ...
+      445  
+      446          if attempt < MAX_RETRIES:
+      447              current_dpi = 300
+      459 -            log(                                              
+      460 -                f"Step 6: Confidence {confidence:.2f} still lo
+          -w. "                                                          
+      461 -                f"Retrying at DPI={current_dpi}."             
+      462 -            )                                                 
+      448 +            log(f"Step 6: Confidence {confidence:.2f} still lo
+          +w. Retrying at DPI={current_dpi}.")                           
+      449          else:
+      450              log(f"Step 6: Max retries reached. Returning best 
+           result (confidence={confidence:.2f}).")
+      451  
+     ...
+      459              "notes": "Detection failed to produce any result."
+           ,
+      460          }
+      461  
+      476 -    # Ensure total count is consistent with labels            
+      462      v = final_result.get("vertical_labels", [])
+      463      h = final_result.get("horizontal_labels", [])
+      464      final_result["total_grid_lines"] = len(v) + len(h)
+      465  
+      466 +    if floor_plan_image:                                      
+      467 +        final_result["_rendered_image"] = floor_plan_image    
+      468 +                                                              
+      469      if used_reference_hint:
+      470          final_result["used_reference_hint"] = True
+      471  
+  ⎿  You've hit your limit · resets 7pm (Asia/Singapore)
+     /upgrade or /extra-usage to finish what you’re working on.
+
+✻ Brewed for 2m 55s
+
+❯ /simplify                                                                     
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2 && git diff HEAD && echo
+      "===UNTRACKED===" && git status --short)
+  ⎿  diff --git a/pdf_detection_agent/feedback_app.py b/pdf_detection_agent
+     /feedback_app.py
+     index 7414f66..9755d40 100644
+     … +22 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+● The git diff only shows feedback_app.py. But the grid-detection-agent files
+  were just edited and are untracked. I'll review both together.
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2 && git show
+      HEAD:pdf_detection_agent/feedback_app.py > /tmp/feedback_old.py && diff
+      /tmp/feedback_old.py pdf_detection_…)
+  ⎿  35,36c35
+     < _SHAPES   = [s for s in ("square", "rectangle", "round", "i_beam", "
+     square_round", "i_square")
+     … +24 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+● Now launching three parallel review agents with full context:
+
+● 3 background agents launched (↓ to manage)
+   ├─ Code reuse review
+   ├─ Code quality review
+   └─ Efficiency review
+
+● Waiting for all three agents...
+
+✻ Cooked for 1m 50s
+
+● Agent "Code reuse review" completed
+
+● Agent "Code quality review" completed
+● Still waiting for the efficiency agent...
+
+● Agent "Efficiency review" completed
+
+● All three done. Actionable fixes:
+
+  1. annotate_image re-renders PDF — use result["_rendered_image"] already
+  stored by agent
+  2. import os inside pdf_renderer.pdf_to_images() — move to module level
+  3. import pdf_renderer inside annotate_image() — now unused, remove entirely
+  4. Narrating comments in main.py — delete them
+  5. # ["column"] comment in feedback_app.py — redundant state in comment
+  6. _scan closure captures floor_plan_image implicitly — make explicit via
+  parameter
+
+  Skipped (false positives): existence check in main.py (improves UX error
+  message), temp dir cleanup (files needed for run duration), opening image 4x
+  in parallel (PIL open is cheap, sharing requires locks), extracting label-draw
+   helper (different geometry, minimal benefit).
+
+● Update(pdf_renderer.py)
+  ⎿  Added 1 line
+      2  PDF → PNG image conversion utility using pdf2image (poppler back
+         end).
+      3  """
+      4  
+      5 +import os                                                       
+      6  import tempfile
+      7  from pdf2image import convert_from_path, pdfinfo_from_path
+      8  from pdf2image.exceptions import PDFInfoNotInstalledError
+
+● Update(pdf_renderer.py)
+  ⎿  Removed 1 line
+      31              "poppler-utils is required. Install with: sudo apt 
+          install poppler-utils"
+      32          )
+      33  
+      34 -    import os                                                  
+      34      out_dir = tempfile.mkdtemp(prefix="grid_agent_")
+      35      image_paths = []
+      36      for i, page in enumerate(pages):
+
+● Now fix main.py — remove re-render, remove dead import, clean narrating
+  comments:
+
+● Write(main.py)
+  ⎿  Added 6 lines, removed 14 lines
+      44  
+      45  def annotate_image(pdf_path: str, result: dict) -> str:
+      46      """
+      47 -    Draw the detected grid labels at the approximate margin pos
+         -itions on                                                      
+      48 -    the first rendered page of the floor plan.                 
+      47 +    Draw the detected grid labels at the approximate margin pos
+         +itions on the                                                  
+      48 +    floor plan image already rendered by agent.run().          
+      49  
+      50      Returns the path to the saved annotated image.
+      51      """
+      52 -    import pdf_renderer                                        
+      53 -                                                               
+      54 -    images = pdf_renderer.pdf_to_images(pdf_path, dpi=200)     
+      55 -    if not images:                                             
+      56 -        print("Warning: could not render PDF for annotation.", 
+         -file=sys.stderr)                                               
+      52 +    image_path = result.get("_rendered_image")                 
+      53 +    if not image_path:                                         
+      54 +        print("Warning: no rendered image in result — skipping 
+         +annotation.", file=sys.stderr)                                 
+      55          return ""
+      56  
+      59 -    img = Image.open(images[0]).convert("RGB")                 
+      57 +    img = Image.open(image_path).convert("RGB")                
+      58      draw = ImageDraw.Draw(img)
+      59      w, h = img.size
+      60  
+     ...
+      66      vertical_labels = result.get("vertical_labels", [])
+      67      horizontal_labels = result.get("horizontal_labels", [])
+      68  
+      71 -    # Draw vertical labels (columns) along the top margin, even
+         -ly spaced                                                      
+      69      if vertical_labels:
+      70          n = len(vertical_labels)
+      71          step = w // (n + 1)
+     ...
+      75              draw.rectangle([x - 20, y, x + 20, y + 34], fill=(2
+          55, 255, 0))
+      76              draw.text((x - 15, y + 2), label, fill=(0, 0, 0), f
+          ont=font)
+      77  
+      81 -    # Draw horizontal labels (rows) along the left margin, even
+         -ly spaced                                                      
+      78      if horizontal_labels:
+      79          n = len(horizontal_labels)
+      80          step = h // (n + 1)
+     ...
+       95  def main():
+       96      args = parse_args()
+       97  
+      102 -    # Validate PDF                                            
+       98      if not os.path.isfile(args.pdf):
+       99          print(f"Error: PDF file not found: {args.pdf}", file=s
+           ys.stderr)
+      100          sys.exit(1)
+      101      if not args.pdf.lower().endswith(".pdf"):
+      102          print(f"Warning: file does not have a .pdf extension: 
+           {args.pdf}", file=sys.stderr)
+      103  
+      109 -    # ollama_client verifies SEA-LION availability on import  
+      104      try:
+      105          import agent
+      106      except RuntimeError as exc:
+     ...
+      113  
+      114      result = agent.run(args.pdf, verbose=args.verbose)
+      115  
+      122 -    # Print final JSON to stdout                              
+      116      print(json.dumps(result, indent=2))
+      117  
+      125 -    # Annotate if requested                                   
+      118      if args.annotate:
+      119          out_path = annotate_image(args.pdf, result)
+      120          if out_path:
+
+● Now fix _scan in agent.py to pass floor_plan_image explicitly, and remove the
+  # ["column"] comment from feedback_app.py:
+
+● Update(agent.py)
+  ⎿  Added 2 lines, removed 2 lines
+      395              log("Step 4: Margin scan (low confidence or discre
+           pancy).")
+      396  
+      397              # All four margin scans are independent — run in p
+           arallel
+      398 -            def _scan(side):                                  
+      399 -                return side, tool_zoom_margin(floor_plan_image
+          -, side)["labels"]                                             
+      398 +            def _scan(side, img=floor_plan_image):            
+      399 +                return side, tool_zoom_margin(img, side)["labe
+          +ls"]                                                          
+      400  
+      401              margin_results = {}
+      402              with ThreadPoolExecutor(max_workers=4) as pool:
+
+● Update(~/Documents/mcc-amplify-v2/pdf_detection_agent/feedback_app.py)
+  ⎿  File must be read first
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● The file has already evolved — _SHAPES is gone, replaced with _SHAPE = 
+  "column". Let me verify the final state of all changed files:
+
+● Bash(python3 -c "
+      import ast, sys…)
+  ⎿    ✓ agent.py
+       ✓ main.py
+       ✓ ollama_client.py
+     … +2 lines (ctrl+o to expand)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● All syntax-clean. Here's what was fixed:
+
+  Fixed:
+  - pdf_renderer.py: import os moved to module level (was re-evaluated on every
+  call)
+  - main.py: annotate_image now reads result["_rendered_image"] — eliminates the
+   redundant full PDF re-render that happened when --annotate was used
+  - main.py: import pdf_renderer removed entirely (no longer needed)
+  - main.py: narrating comments removed (# Validate PDF, # Print final JSON to 
+  stdout, # Annotate if requested, # Draw vertical labels..., # Draw horizontal 
+  labels...)
+  - agent.py: _scan closure now binds floor_plan_image as a default argument
+  (img=floor_plan_image) rather than relying on implicit closure capture across
+  loop iterations
+  - feedback_app.py: already had # ["column"] comment removed in the prior file
+  revision
+
+✻ Baked for 1m 46s
+
+❯ try to make a tools.py for the local agent to use and also sqlite or          
+memory.json for agent to have a correction memory and improve the grid          
+detection. Then we must have .ipynb file for user to test the grid detection    
+agent.                                                                          
+
+● Let me first understand the existing codebase patterns before building.
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2/pdf_detection_agent && python3
+      -c "import sqlite3; conn=sqlite3.connect('detections.db'); print([row for
+      row in conn.ex…)
+  ⎿  [('runs',), ('columns',), ('sqlite_sequence',), ('corrections',), ('ti
+     le_notes',)]
+     [(0, 'run_id', 'TEXT', 0, None, 1), (1, 'timestamp', 'TEXT', 1, None,
+     … +23 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Good — I have the full picture of the pdf_detection_agent patterns. Now I'll
+  build:
+  1. tools.py — all tool functions + SQLite/memory.json correction memory
+  2. Update agent.py — import from tools.py, use memory to improve detection
+  3. Update test_grid_detection.ipynb — add memory, corrections, and informed
+  re-run sections
+
+  Let me write all three in parallel:
+
+● Write(tools.py)
+  ⎿  Wrote 493 lines to tools.py
+       1 """
+       2 All agent tool functions + SQLite / memory.json correction memor
+         y.
+       3 
+       4 SQLite (grid_memory.db) — authoritative audit trail:
+       5     runs        — one row per agent.run() call
+       6     grid_results — labels detected in each run
+       7     corrections — human-supplied corrections to a run
+       8 
+       9 memory.json — fast per-PDF lookup cache:
+      10     { "<pdf_hash>": { "vertical": [...], "horizontal": [...],
+     … +483 lines (ctrl+o to expand)
+
+● Now rewrite agent.py to import from tools.py and use correction memory:
+
+● Write(agent.py)
+  ⎿  Added 65 lines, removed 206 lines
+       1  """
+       2 -Agentic grid line detector — all orchestration, prompts, and to
+         -ols live here.                                                 
+       2 +Agentic grid line detector — orchestration, prompts, and agenti
+         +c loop.                                                        
+       3 +                                                               
+       4 +Tool functions and memory management live in tools.py.         
+       5  """
+       6  
+       7  import json
+       8  import os
+       7 -import re                                                      
+       8 -import tempfile                                                
+       9 +import uuid                                                    
+      10  from concurrent.futures import ThreadPoolExecutor, as_completed
+      11  
+      11 -from PIL import Image                                          
+      12 -                                                               
+      12  import ollama_client
+      14 -import pdf_renderer                                            
+      13 +from tools import (                                            
+      14 +    tool_render_pdf,                                           
+      15 +    tool_detect_grid,                                          
+      16 +    tool_verify,                                               
+      17 +    tool_zoom_margin,                                          
+      18 +    tool_reconcile,                                            
+      19 +    tool_read_reference,                                       
+      20 +    tool_memory_lookup,                                        
+      21 +    tool_memory_save_run,                                      
+      22 +    _parse_json,                                               
+      23 +)                                                              
+      24  
+      25  # ── CONFIGURATION ────────────────────────────────────────────
+          ─────────────────
+      26  
+      27  CONFIDENCE_THRESHOLD = 0.85
+      28  MAX_RETRIES = 3
+      20 -REFERENCE_SCRIPT = "/tmp/reference_approach.py"                
+      21 -MARGIN_FRACTION = 0.12                                         
+      29  
+      23 -_reference_hint_cache: str | None = None                       
+      30  
+      25 -                                                               
+      31  # ── PROMPTS ──────────────────────────────────────────────────
+          ─────────────────
+      32  
+      33  SYSTEM_PROMPT = """
+     ...
+      59  If confidence is below 0.85, explain why in the notes field.
+      60  """
+      61  
+      62 +MEMORY_HINT_PROMPT = """                                       
+      63 +{system_prompt}                                                
+      64 +                                                               
+      65 +CORRECTION MEMORY: A human expert previously reviewed this exac
+         +t floor plan and confirmed:                                    
+      66 +  Vertical grid lines:   {vertical_labels}                     
+      67 +  Horizontal grid lines: {horizontal_labels}                   
+      68 +  Notes: {notes}                                               
+      69 +                                                               
+      70 +Use this as strong prior knowledge. Verify visually, but defer 
+         +to this answer                                                 
+      71 +unless you see clear evidence to the contrary.                 
+      72 +"""                                                            
+      73 +                                                               
+      74  VERIFICATION_PROMPT = """
+      75  Look at this floor plan again carefully. You previously identif
+          ied these grid lines:
+      76  {previous_result}
+     ...
+      129  """
+      130  
+      131  
+      115 -# ── TOOLS ───────────────────────────────────────────────────
+          -──────────────────                                            
+      116 -                                                              
+      117 -def tool_render_pdf(pdf_path: str, dpi: int = 200) -> dict:   
+      118 -    """Convert PDF to images. Returns image paths and page cou
+          -nt."""                                                        
+      119 -    images = pdf_renderer.pdf_to_images(pdf_path, dpi=dpi)    
+      120 -    return {"images": images, "page_count": len(images)}      
+      121 -                                                              
+      122 -                                                              
+      123 -def tool_detect_grid(image_path: str, extra_prompt: str = "") 
+          --> dict:                                                      
+      124 -    """Send the full floor plan image to SEA-LION for initial 
+          -grid detection."""                                            
+      125 -    prompt = extra_prompt if extra_prompt else SYSTEM_PROMPT  
+      126 -    raw = ollama_client.query_vision(image_path, prompt)      
+      127 -    return _parse_json(raw)                                   
+      128 -                                                              
+      129 -                                                              
+      130 -def tool_verify(image_path: str, previous_result: dict) -> dic
+          -t:                                                            
+      131 -    """Second-pass verification: send the image + previous res
+          -ult back to SEA-LION."""                                      
+      132 -    prompt = VERIFICATION_PROMPT.format(                      
+      133 -        previous_result=json.dumps(previous_result, indent=2) 
+      134 -    )                                                         
+      135 -    raw = ollama_client.query_vision(image_path, prompt)      
+      136 -    return _parse_json(raw)                                   
+      137 -                                                              
+      138 -                                                              
+      139 -def tool_zoom_margin(image_path: str, side: str) -> dict:     
+      140 -    """                                                       
+      141 -    Crop a margin band from the image and query SEA-LION for l
+          -abels in that band.                                           
+      142 -                                                              
+      143 -    Args:                                                     
+      144 -        image_path: Path to the full floor plan PNG.          
+      145 -        side: One of "top", "bottom", "left", "right".        
+      146 -                                                              
+      147 -    Returns:                                                  
+      148 -        {"labels": list[str]}                                 
+      149 -    """                                                       
+      150 -    img = Image.open(image_path)                              
+      151 -    w, h = img.size                                           
+      152 -    band = int(MARGIN_FRACTION * min(w, h))                   
+      153 -                                                              
+      154 -    boxes = {                                                 
+      155 -        "top":    (0, 0, w, band),                            
+      156 -        "bottom": (0, h - band, w, h),                        
+      157 -        "left":   (0, 0, band, h),                            
+      158 -        "right":  (w - band, 0, w, h),                        
+      159 -    }                                                         
+      160 -    if side not in boxes:                                     
+      161 -        raise ValueError(f"side must be one of {list(boxes.key
+          -s())}, got: {side!r}")                                        
+      162 -                                                              
+      163 -    crop = img.crop(boxes[side])                              
+      164 -    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=Fa
+          -lse, prefix=f"margin_{side}_")                                
+      165 -    tmp_path = tmp.name                                       
+      166 -    crop.save(tmp_path, "PNG")                                
+      167 -    tmp.close()                                               
+      168 -                                                              
+      169 -    try:                                                      
+      170 -        prompt = ZOOMED_PROMPT.format(side=side)              
+      171 -        raw = ollama_client.query_vision(tmp_path, prompt)    
+      172 -    finally:                                                  
+      173 -        os.unlink(tmp_path)                                   
+      174 -                                                              
+      175 -    return {"labels": _parse_json(raw, array=True)}           
+      176 -                                                              
+      177 -                                                              
+      178 -def tool_reconcile(full_result: dict, margin_results: dict) ->
+          - dict:                                                        
+      179 -    """                                                       
+      180 -    Ask SEA-LION to reconcile the full-image detection with al
+          -l four margin scans.                                          
+      181 -                                                              
+      182 -    Args:                                                     
+      183 -        full_result: dict from tool_verify or tool_detect_grid
+          -.                                                             
+      184 -        margin_results: {"top": [...], "bottom": [...], "left"
+          -: [...], "right": [...]}                                      
+      185 -                                                              
+      186 -    Returns:                                                  
+      187 -        Final authoritative result dict.                      
+      188 -    """                                                       
+      189 -    prompt = RECONCILE_PROMPT.format(                         
+      190 -        full_result=json.dumps(full_result, indent=2),        
+      191 -        top=margin_results.get("top", []),                    
+      192 -        bottom=margin_results.get("bottom", []),              
+      193 -        left=margin_results.get("left", []),                  
+      194 -        right=margin_results.get("right", []),                
+      195 -    )                                                         
+      196 -    raw = ollama_client.query_text(prompt)                    
+      197 -    return _parse_json(raw)                                   
+      198 -                                                              
+      199 -                                                              
+      200 -def tool_read_reference() -> str:                             
+      201 -    """                                                       
+      202 -    LAST RESORT ONLY — read /tmp/reference_approach.py (from f
+          -inal_success.ipynb)                                           
+      203 -    and return a concise summary of the meaningful detection l
+          -ogic.                                                         
+      204 -                                                              
+      205 -    The caller passes this hint to SEA-LION:                  
+      206 -        "A previous approach that worked on a similar floor pl
+          -an did the following:                                         
+      207 -         {hint}. Use this as guidance and try again."         
+      208 -    """                                                       
+      209 -    global _reference_hint_cache                              
+      210 -    if _reference_hint_cache is not None:                     
+      211 -        return _reference_hint_cache                          
+      212 -                                                              
+      213 -    if not os.path.isfile(REFERENCE_SCRIPT):                  
+      214 -        return (                                              
+      215 -            "Reference script not available. "                
+      216 -            "Generate it with: jupyter nbconvert --to script "
+      217 -            "~/Documents/test-grid-detector/final_success.ipyn
+          -b --stdout "                                                  
+      218 -            f"> {REFERENCE_SCRIPT}"                           
+      219 -        )                                                     
+      220 -                                                              
+      221 -    with open(REFERENCE_SCRIPT) as f:                         
+      222 -        code = f.read()                                       
+      223 -                                                              
+      224 -    skip_re = re.compile("|".join([                           
+      225 -        r"^\s*import ",                                       
+      226 -        r"^\s*from \w+ import",                               
+      227 -        r"^\s*get_ipython\(",                                 
+      228 -        r"^\s*#\s*In\[",                                      
+      229 -        r"^\s*display\(",                                     
+      230 -        r"^\s*plt\.",                                         
+      231 -        r"^\s*fig\.",                                         
+      232 -        r"^\s*ax\.",                                          
+      233 -        r"^\s*print\(",                                       
+      234 -        r"^\s*IPython",                                       
+      235 -        r"^\s*%",                                             
+      236 -    ]))                                                       
+      237 -                                                              
+      238 -    cleaned = re.sub(                                         
+      239 -        r"\n{3,}",                                            
+      240 -        "\n\n",                                               
+      241 -        "\n".join(line for line in code.splitlines() if not sk
+          -ip_re.match(line)),                                           
+      242 -    ).strip()                                                 
+      243 -                                                              
+      244 -    summary_prompt = (                                        
+      245 -        "The following is Python code from a working grid line
+          - detector for "                                               
+      246 -        "construction floor plans. Summarise in 3-5 bullet poi
+          -nts the KEY STEPS "                                           
+      247 -        "and TECHNIQUES used to identify grid line labels — fo
+          -cus on what a vision "                                        
+      248 -        "model should look for, not on implementation details.
+          -\n\n"                                                         
+      249 -        f"```python\n{cleaned[:4000]}\n```"                   
+      250 -    )                                                         
+      251 -    _reference_hint_cache = ollama_client.query_text(summary_p
+          -rompt)                                                        
+      252 -    return _reference_hint_cache                              
+      253 -                                                              
+      254 -                                                              
+      132  # ── INTERNAL HELPERS ────────────────────────────────────────
+           ──────────────────
+      133  
+      257 -def _parse_json(raw: str, array: bool = False):               
+      258 -    """                                                       
+      259 -    Extract and parse the first JSON object or array from a mo
+          -del response string.                                          
+      260 -                                                              
+      261 -    Args:                                                     
+      262 -        raw: Raw model output, possibly wrapped in markdown fe
+          -nces.                                                         
+      263 -        array: If True, search for a JSON array ([...]); other
+          -wise a JSON object ({...}).                                   
+      264 -                                                              
+      265 -    Returns:                                                  
+      266 -        Parsed list (array=True) or dict (array=False). Falls 
+          -back to empty on error.                                       
+      267 -    """                                                       
+      268 -    raw = re.sub(r"```(?:json)?", "", raw).strip()            
+      269 -    if array:                                                 
+      270 -        match = re.search(r"\[.*?\]", raw, re.DOTALL)         
+      271 -        if not match:                                         
+      272 -            return []                                         
+      273 -        try:                                                  
+      274 -            return json.loads(match.group())                  
+      275 -        except json.JSONDecodeError:                          
+      276 -            return []                                         
+      277 -    else:                                                     
+      278 -        match = re.search(r"\{.*\}", raw, re.DOTALL)          
+      279 -        if not match:                                         
+      280 -            return {                                          
+      281 -                "total_grid_lines": 0,                        
+      282 -                "vertical_labels": [],                        
+      283 -                "horizontal_labels": [],                      
+      284 -                "confidence": 0.0,                            
+      285 -                "notes": f"Could not parse JSON from response:
+          - {raw[:200]}",                                                
+      286 -            }                                                 
+      287 -        try:                                                  
+      288 -            return json.loads(match.group())                  
+      289 -        except json.JSONDecodeError as exc:                   
+      290 -            return {                                          
+      291 -                "total_grid_lines": 0,                        
+      292 -                "vertical_labels": [],                        
+      293 -                "horizontal_labels": [],                      
+      294 -                "confidence": 0.0,                            
+      295 -                "notes": f"JSON parse error: {exc}. Raw: {raw[
+          -:200]}",                                                      
+      296 -            }                                                 
+      297 -                                                              
+      298 -                                                              
+      134  def _results_differ(a: dict, b: dict) -> bool:
+      300 -    """Return True if the two detection results have meaningfu
+          -lly different labels."""                                      
+      135      return (
+      136          sorted(a.get("vertical_labels", [])) != sorted(b.get("
+           vertical_labels", []))
+      137          or sorted(a.get("horizontal_labels", [])) != sorted(b.
+           get("horizontal_labels", []))
+     ...
+      139  
+      140  
+      141  def _select_floor_plan_page(image_paths: list, verbose: bool) 
+           -> str:
+      308 -    """                                                       
+      309 -    For multi-page PDFs, ask SEA-LION which page is the primar
+          -y floor plan.                                                 
+      310 -    Returns the path to the selected image.                   
+      311 -    """                                                       
+      142      if len(image_paths) == 1:
+      143          return image_paths[0]
+      144  
+     ...
+      167  
+      168      Args:
+      169          pdf_path: Path to the PDF floor plan.
+      340 -        verbose: If True, include a "steps_taken" field in the
+          - return value.                                                
+      170 +        verbose:  If True, include a "steps_taken" field in th
+          +e return value.                                               
+      171  
+      172      Returns:
+      173          dict with keys: total_grid_lines, vertical_labels, hor
+           izontal_labels,
+      344 -                        confidence, notes, _rendered_image (pa
+          -th to floor plan PNG),                                        
+      345 -                        and (if verbose) steps_taken.         
+      346 -        "used_reference_hint": True is added if the fallback w
+          -as triggered.                                                 
+      174 +        confidence, notes, _rendered_image, run_id.           
+      175 +        "used_reference_hint": True is set when the notebook f
+          +allback triggered.                                            
+      176 +        "used_correction_memory": True is set when a human cor
+          +rection was applied.                                          
+      177      """
+      178      steps_taken = []
+      179      used_reference_hint = False
+      180 +    used_correction_memory = False                            
+      181      attempt = 0
+      182      final_result = None
+      183      current_dpi = 200
+      184      floor_plan_image = None
+      185 +    run_id = str(uuid.uuid4())                                
+      186  
+      187      def log(msg):
+      188          if verbose:
+      189              print(f"  [agent] {msg}")
+      190          steps_taken.append(msg)
+      191  
+      192 +    # ── MEMORY LOOKUP — check for human corrections before an
+          +y detection ───────                                           
+      193 +    correction = tool_memory_lookup(pdf_path)                 
+      194 +    if correction:                                            
+      195 +        log(                                                  
+      196 +            f"Correction memory: found prior correction — "   
+      197 +            f"V={correction['vertical_labels']} H={correction[
+          +'horizontal_labels']}"                                        
+      198 +        )                                                     
+      199 +                                                              
+      200      while attempt < MAX_RETRIES:
+      201          attempt += 1
+      202          log(f"=== Attempt {attempt} (DPI={current_dpi}) ===")
+     ...
+      212  
+      213          # ── STEP 2: INITIAL DETECTION ───────────────────────
+           ──────────────────
+      214          log("Step 2: Initial grid detection.")
+      375 -        initial_result = tool_detect_grid(floor_plan_image)   
+      215 +        if correction:                                        
+      216 +            # Inject correction memory as a strong prior into 
+          +the first prompt                                              
+      217 +            detect_prompt = MEMORY_HINT_PROMPT.format(        
+      218 +                system_prompt=SYSTEM_PROMPT,                  
+      219 +                vertical_labels=correction["vertical_labels"],
+      220 +                horizontal_labels=correction["horizontal_label
+          +s"],                                                          
+      221 +                notes=correction.get("notes", ""),            
+      222 +            )                                                 
+      223 +            used_correction_memory = True                     
+      224 +            log("  Using correction memory hint in prompt.")  
+      225 +        else:                                                 
+      226 +            detect_prompt = SYSTEM_PROMPT                     
+      227 +                                                              
+      228 +        initial_result = tool_detect_grid(floor_plan_image, de
+          +tect_prompt)                                                  
+      229          log(
+      230              f"  Initial: {initial_result.get('total_grid_lines
+           ')} lines, "
+      231              f"confidence={initial_result.get('confidence', 0):
+           .2f}"
+     ...
+      233  
+      234          # ── STEP 3: VERIFY ──────────────────────────────────
+           ──────────────────
+      235          log("Step 3: Verification pass.")
+      383 -        verified_result = tool_verify(floor_plan_image, initia
+          -l_result)                                                     
+      236 +        verified_result = tool_verify(floor_plan_image, initia
+          +l_result, VERIFICATION_PROMPT)                                
+      237          discrepancy = _results_differ(initial_result, verified
+           _result)
+      238          log("  Discrepancy detected." if discrepancy else "  V
+           erification confirmed initial result.")
+      239          log(
+     ...
+      249  
+      250              # All four margin scans are independent — run in p
+           arallel
+      251              def _scan(side, img=floor_plan_image):
+      399 -                return side, tool_zoom_margin(img, side)["labe
+          -ls"]                                                          
+      252 +                return side, tool_zoom_margin(img, side, ZOOME
+          +D_PROMPT)["labels"]                                           
+      253  
+      254              margin_results = {}
+      255              with ThreadPoolExecutor(max_workers=4) as pool:
+     ...
+      260                      log(f"  {side.capitalize()} margin: {label
+           s}")
+      261  
+      262              log("  Reconciling full detection with margin scan
+           s.")
+      410 -            reconciled = tool_reconcile(verified_result, margi
+          -n_results)                                                    
+      263 +            reconciled = tool_reconcile(verified_result, margi
+          +n_results, RECONCILE_PROMPT)                                  
+      264              log(
+      265                  f"  Reconciled: {reconciled.get('total_grid_li
+           nes')} lines, "
+      266                  f"confidence={reconciled.get('confidence', 0):
+           .2f}"
+     ...
+      278              log(f"  Hint summary: {hint[:120]}...")
+      279  
+      280              hint_prompt = HINT_PROMPT.format(system_prompt=SYS
+           TEM_PROMPT, hint=hint)
+      428 -            hinted_result = tool_detect_grid(floor_plan_image,
+          - extra_prompt=hint_prompt)                                    
+      281 +            hinted_result = tool_detect_grid(floor_plan_image,
+          + hint_prompt)                                                 
+      282              log(
+      283                  f"  After hint: {hinted_result.get('total_grid
+           _lines')} lines, "
+      284                  f"confidence={hinted_result.get('confidence', 
+           0):.2f}"
+     ...
+      315      v = final_result.get("vertical_labels", [])
+      316      h = final_result.get("horizontal_labels", [])
+      317      final_result["total_grid_lines"] = len(v) + len(h)
+      318 +    final_result["run_id"] = run_id                           
+      319  
+      320      if floor_plan_image:
+      321          final_result["_rendered_image"] = floor_plan_image
+      322  
+      323      if used_reference_hint:
+      324          final_result["used_reference_hint"] = True
+      325 +    if used_correction_memory:                                
+      326 +        final_result["used_correction_memory"] = True         
+      327  
+      328      if verbose:
+      329          final_result["steps_taken"] = steps_taken
+      330  
+      331 +    # Persist to SQLite                                       
+      332 +    tool_memory_save_run(pdf_path, final_result, current_dpi, 
+          +run_id)                                                       
+      333 +                                                              
+      334      return final_result
+
+● Now rewrite the notebook with the full memory/corrections workflow:
+
+● Write(test_grid_detection.ipynb)  ⎿  Added 292 lines, removed 100 lines
+       6     "source": [
+       7      "# Grid Line Detection — Interactive Evaluation Notebook\n"
+          ,
+       8      "\n",
+       9 -    "Use this notebook to inspect how well the agent reads grid
+         - lines from your floor plan PDF.\n",                           
+      10 -    "There is no ground truth — you judge the results visually 
+         -against the rendered drawing.\n",                              
+       9 +    "Use this notebook to inspect how well the agent reads grid
+         + lines from your floor plan PDF,\n",                           
+      10 +    "record corrections, and re-run with correction memory acti
+         +ve.\n",                                                        
+      11      "\n",
+      12 +    "**Workflow:**\n",                                         
+      13 +    "1. Set `PDF_PATH` in Section 0\n",                        
+      14 +    "2. Run Sections 1–6 to evaluate the raw detection\n",     
+      15 +    "3. Use Section 8 to record a correction if anything is wro
+         +ng\n",                                                         
+      16 +    "4. Run Section 9 to see the correction-informed re-run\n",
+      17 +    "\n",                                                      
+      18      "**Restart & Run All** to evaluate from scratch."
+      19     ]
+      20    },
+     ...
+      41      "# ────────────────────────────────────────────────────────
+          ─────\n",
+      42      "\n",
+      43      "import matplotlib.pyplot as plt\n",
+      38 -    "import matplotlib.patches as mpatches\n",                 
+      44      "from IPython.display import display, Markdown\n",
+      45      "from PIL import Image\n",
+      46      "\n",
+      42 -    "# Make sure the agent modules are importable\n",          
+      47      "sys.path.insert(0, os.path.dirname(os.path.abspath('__file
+          __')))\n",
+      48      "\n",
+      49      "SEALION_ONLINE = True\n",
+     ...
+      51      "    import ollama_client\n",
+      52      "    import pdf_renderer\n",
+      53      "    import agent\n",
+      54 +    "    import tools\n",                                      
+      55      "    print(\"✓ All modules loaded.\")\n",
+      56      "except RuntimeError as e:\n",
+      57      "    SEALION_ONLINE = False\n",
+      58      "    print(f\"⚠ SEA-LION is offline: {e}\")\n",
+      54 -    "    print(\"Vision sections will be skipped — fix Ollama a
+         -nd re-run.\")\n",                                              
+      59 +    "    print(\"Vision sections will be skipped. Fix Ollama an
+         +d re-run.\")\n",                                               
+      60      "\n",
+      61      "if not os.path.isfile(PDF_PATH):\n",
+      62      "    print(f\"⚠ PDF not found: {PDF_PATH}\")\n",
+      63      "    print(\"Update PDF_PATH in Section 0 and re-run.\")\n"
+          ,
+      64      "\n",
+      60 -    "# Shared state collected as cells run\n",                 
+      65      "_state = {}\n",
+      66      "print(\"Setup complete.\")"
+      67     ]
+     ...
+      82     "outputs": [],
+      83     "source": [
+      84      "if not os.path.isfile(PDF_PATH):\n",
+      81 -    "    print(\"⚠ PDF not found — skipping Section 1.\")\n",  
+      85 +    "    print(\"⚠ PDF not found — skipping.\")\n",            
+      86      "else:\n",
+      87      "    print(\"Rendering PDF at 150 DPI for preview...\")\n",
+      88      "    preview_images = pdf_renderer.pdf_to_images(PDF_PATH, 
+          dpi=150)\n",
+     ...
+      118     "outputs": [],
+      119     "source": [
+      120      "if not SEALION_ONLINE or not os.path.isfile(PDF_PATH):\n"
+           ,
+      117 -    "    print(\"⚠ Skipping Section 2 (SEA-LION offline or PDF
+          - missing).\")\n",                                             
+      121 +    "    print(\"⚠ Skipping (SEA-LION offline or PDF missing).
+          +\")\n",                                                       
+      122      "else:\n",
+      119 -    "    # Use the preview images from Section 1, or re-render
+          - at 200 DPI\n",                                               
+      120 -    "    if 'preview_images' not in _state:\n",               
+      121 -    "        _state['preview_images'] = pdf_renderer.pdf_to_im
+          -ages(PDF_PATH, dpi=200)\n",                                   
+      122 -    "\n",                                                     
+      123 -    "    # Select the primary floor plan page\n",             
+      123      "    images_200 = pdf_renderer.pdf_to_images(PDF_PATH, dpi
+           =200)\n",
+      124      "    _state['images_200'] = images_200\n",
+      125      "    floor_plan_image = agent._select_floor_plan_page(imag
+           es_200, verbose=True)\n",
+      126      "    _state['floor_plan_image'] = floor_plan_image\n",
+      127      "\n",
+      129 -    "    print(\"Running initial detection...\")\n",          
+      130 -    "    initial = agent.tool_detect_grid(floor_plan_image)\n"
+          -,                                                             
+      128 +    "    # Check if a correction exists — show it before detec
+          +ting\n",                                                      
+      129 +    "    correction = tools.tool_memory_lookup(PDF_PATH)\n",  
+      130 +    "    if correction:\n",                                   
+      131 +    "        print(f\"📌 Correction memory found for this PDF:
+          +\")\n",                                                       
+      132 +    "        print(f\"   Vertical:   {correction['vertical_lab
+          +els']}\")\n",                                                 
+      133 +    "        print(f\"   Horizontal: {correction['horizontal_l
+          +abels']}\")\n",                                               
+      134 +    "        if correction.get('notes'):\n",                  
+      135 +    "            print(f\"   Notes: {correction['notes']}\")\n
+          +",                                                            
+      136 +    "        print()\n",                                      
+      137 +    "\n",                                                     
+      138 +    "    print(\"Running initial detection (no correction hint
+          +)...\")\n",                                                   
+      139 +    "    initial = tools.tool_detect_grid(floor_plan_image, ag
+          +ent.SYSTEM_PROMPT)\n",                                        
+      140      "    _state['initial'] = initial\n",
+      141      "\n",
+      142      "    fig, ax = plt.subplots(figsize=(16, 12))\n",
+     ...
+      166     "outputs": [],
+      167     "source": [
+      168      "if not SEALION_ONLINE or 'initial' not in _state:\n",
+      160 -    "    print(\"⚠ Skipping Section 3 (SEA-LION offline or Sec
+          -tion 2 not run).\")\n",                                       
+      169 +    "    print(\"⚠ Skipping (SEA-LION offline or Section 2 not
+          + run).\")\n",                                                 
+      170      "else:\n",
+      171      "    print(\"Running verification pass...\")\n",
+      163 -    "    verified = agent.tool_verify(_state['floor_plan_image
+          -'], _state['initial'])\n",                                    
+      172 +    "    verified = tools.tool_verify(_state['floor_plan_image
+          +'], _state['initial'], agent.VERIFICATION_PROMPT)\n",         
+      173      "    _state['verified'] = verified\n",
+      174      "\n",
+      175      "    initial = _state['initial']\n",
+      176      "\n",
+      177      "    def _fmt(v):\n",
+      169 -    "        if isinstance(v, list):\n",                      
+      170 -    "            return ' '.join(str(x) for x in v)\n",       
+      171 -    "        return str(v)\n",                                
+      178 +    "        return ' '.join(str(x) for x in v) if isinstance(
+          +v, list) else str(v)\n",                                      
+      179      "\n",
+      180      "    fields = ['total_grid_lines', 'vertical_labels', 'hor
+           izontal_labels', 'confidence']\n",
+      181      "    print(f\"\\n{'Field':<25} {'Initial':<35} {'Verified'
+           :<35} {'Status'}\")\n",
+     ...
+      206     "outputs": [],
+      207     "source": [
+      208      "if not SEALION_ONLINE or 'floor_plan_image' not in _state
+           :\n",
+      202 -    "    print(\"⚠ Skipping Section 4 (SEA-LION offline or flo
+          -or plan image not available).\")\n",                          
+      209 +    "    print(\"⚠ Skipping (SEA-LION offline or floor plan im
+          +age not available).\")\n",                                    
+      210      "else:\n",
+      204 -    "    from PIL import Image as _Image\n",                  
+      205 -    "    import tempfile\n",                                  
+      206 -    "\n",                                                     
+      207 -    "    img = _Image.open(_state['floor_plan_image'])\n",    
+      211 +    "    img = Image.open(_state['floor_plan_image'])\n",     
+      212      "    w, h = img.size\n",
+      209 -    "    band = int(agent.MARGIN_FRACTION * min(w, h))\n",    
+      213 +    "    band = int(tools.MARGIN_FRACTION * min(w, h))\n",    
+      214      "\n",
+      215      "    boxes = {\n",
+      216      "        'top':    (0, 0, w, band),\n",
+     ...
+      225      "\n",
+      226      "    for side in ('top', 'bottom', 'left', 'right'):\n",
+      227      "        print(f\"Scanning {side} margin...\")\n",
+      224 -    "        scan = agent.tool_zoom_margin(_state['floor_plan_
+          -image'], side)\n",                                            
+      228 +    "        scan = tools.tool_zoom_margin(_state['floor_plan_
+          +image'], side, agent.ZOOMED_PROMPT)\n",                       
+      229      "        margin_results[side] = scan['labels']\n",
+      226 -    "\n",                                                     
+      230      "        crop = img.crop(boxes[side])\n",
+      231      "        ax = ax_map[side]\n",
+      232      "        ax.imshow(crop)\n",
+      230 -    "        ax.set_title(f\"{side.capitalize()} margin → {sca
+          -n['labels']}\", fontsize=11)\n",                              
+      233 +    "        ax.set_title(f\"{side.capitalize()} → {scan['labe
+          +ls']}\", fontsize=11)\n",                                     
+      234      "        ax.axis('off')\n",
+      235      "\n",
+      236      "    plt.tight_layout()\n",
+      237      "    plt.show()\n",
+      238      "    _state['margin_results'] = margin_results\n",
+      239      "\n",
+      237 -    "    # Summary table\n",                                  
+      240      "    print(\"\\n── Margin Label Summary ──────────────────
+           ───────\")\n",
+      241      "    print(f\"{'Margin':<10} {'Labels Found'}\")\n",
+      242      "    print(\"-\" * 50)\n",
+     ...
+      244      "        labels = ' '.join(margin_results[side]) if margin
+           _results[side] else '(none)'\n",
+      245      "        print(f\"{side.capitalize():<10} {labels}\")\n",
+      246      "\n",
+      245 -    "    # Highlight inconsistencies between opposing margins\
+          -n",                                                           
+      247      "    print(\"\\n── Opposing Margin Consistency ───────────
+           ───────\")\n",
+      247 -    "    for pair in [('top', 'bottom'), ('left', 'right')]:\n
+          -",                                                            
+      248 -    "        a, b = pair\n",                                  
+      248 +    "    for a, b in [('top', 'bottom'), ('left', 'right')]:\n
+          +",                                                            
+      249      "        la = sorted(margin_results.get(a, []))\n",
+      250      "        lb = sorted(margin_results.get(b, []))\n",
+      251      "        if la == lb:\n",
+     ...
+      271     "outputs": [],
+      272     "source": [
+      273      "if not SEALION_ONLINE or not os.path.isfile(PDF_PATH):\n"
+           ,
+      274 -    "    print(\"⚠ Skipping Section 5 (SEA-LION offline or PDF
+          - missing).\")\n",                                             
+      274 +    "    print(\"⚠ Skipping (SEA-LION offline or PDF missing).
+          +\")\n",                                                       
+      275      "else:\n",
+      276      "    print(\"Running full agent...\")\n",
+      277      "    print(\"=\" * 60)\n",
+     ...
+      280      "\n",
+      281      "    print(\"=\" * 60)\n",
+      282      "    print(\"\\n── Final JSON Result ─────────────────────
+           ────────\")\n",
+      283 -    "    # Print without steps_taken for readability\n",      
+      284 -    "    display_result = {k: v for k, v in full_result.items(
+          -) if k != 'steps_taken'}\n",                                  
+      283 +    "    display_result = {k: v for k, v in full_result.items(
+          +)\n",                                                         
+      284 +    "                      if k not in ('steps_taken', '_rende
+          +red_image')}\n",                                              
+      285      "    print(json.dumps(display_result, indent=2))\n",
+      286      "\n",
+      287 -    "    # Annotated image preview (if PIL can do it inline)\n
+          -",                                                            
+      287 +    "    # Annotated image preview\n",                        
+      288      "    try:\n",
+      289 -    "        images_200 = _state.get('images_200') or pdf_rend
+          -erer.pdf_to_images(PDF_PATH, dpi=200)\n",                     
+      290 -    "        img = Image.open(images_200[0]).convert('RGB')\n"
+          -,                                                             
+      289      "        from PIL import ImageDraw, ImageFont\n",
+      290 +    "        img_path = full_result.get('_rendered_image') or 
+          +_state['images_200'][0]\n",                                   
+      291 +    "        img = Image.open(img_path).convert('RGB')\n",    
+      292      "        draw = ImageDraw.Draw(img)\n",
+      293      "        w, h = img.size\n",
+      294      "        try:\n",
+     ...
+      296      "        except IOError:\n",
+      297      "            font = ImageFont.load_default()\n",
+      298      "\n",
+      299 -    "        vertical_labels = full_result.get('vertical_label
+          -s', [])\n",                                                   
+      300 -    "        horizontal_labels = full_result.get('horizontal_l
+          -abels', [])\n",                                               
+      299 +    "        for i, lbl in enumerate(full_result.get('vertical
+          +_labels', [])):\n",                                           
+      300 +    "            n = len(full_result['vertical_labels'])\n",  
+      301 +    "            x = (w // (n + 1)) * (i + 1)\n",             
+      302 +    "            draw.rectangle([x-20, 10, x+20, 44], fill=(25
+          +5,255,0))\n",                                                 
+      303 +    "            draw.text((x-15, 12), lbl, fill=(0,0,0), font
+          +=font)\n",                                                    
+      304      "\n",
+      302 -    "        if vertical_labels:\n",                          
+      303 -    "            n = len(vertical_labels)\n",                 
+      304 -    "            step = w // (n + 1)\n",                      
+      305 -    "            for i, lbl in enumerate(vertical_labels):\n",
+      306 -    "                x = step * (i + 1)\n",                   
+      307 -    "                draw.rectangle([x-20, 10, x+20, 44], fill
+          -=(255,255,0))\n",                                             
+      308 -    "                draw.text((x-15, 12), lbl, fill=(0,0,0), 
+          -font=font)\n",                                                
+      305 +    "        for i, lbl in enumerate(full_result.get('horizont
+          +al_labels', [])):\n",                                         
+      306 +    "            n = len(full_result['horizontal_labels'])\n",
+      307 +    "            y = (h // (n + 1)) * (i + 1)\n",             
+      308 +    "            draw.rectangle([10, y-17, 50, y+17], fill=(0,
+          +200,255))\n",                                                 
+      309 +    "            draw.text((12, y-14), lbl, fill=(0,0,0), font
+          +=font)\n",                                                    
+      310      "\n",
+      310 -    "        if horizontal_labels:\n",                        
+      311 -    "            n = len(horizontal_labels)\n",               
+      312 -    "            step = h // (n + 1)\n",                      
+      313 -    "            for i, lbl in enumerate(horizontal_labels):\n
+          -",                                                            
+      314 -    "                y = step * (i + 1)\n",                   
+      315 -    "                draw.rectangle([10, y-17, 50, y+17], fill
+          -=(0,200,255))\n",                                             
+      316 -    "                draw.text((12, y-14), lbl, fill=(0,0,0), 
+          -font=font)\n",                                                
+      317 -    "\n",                                                     
+      311      "        fig, ax = plt.subplots(figsize=(16, 12))\n",
+      312      "        ax.imshow(img)\n",
+      313      "        ax.set_title(\"Full Agent Run — Annotated Result\
+           ", fontsize=14)\n",
+     ...
+      334     "outputs": [],
+      335     "source": [
+      336      "if 'full_result' not in _state:\n",
+      344 -    "    print(\"⚠ Skipping Section 6 (run Section 5 first).\"
+          -)\n",                                                         
+      337 +    "    print(\"⚠ Skipping (run Section 5 first).\")\n",     
+      338      "else:\n",
+      346 -    "    fr = _state['full_result']\n",                       
+      339 +    "    fr   = _state['full_result']\n",                     
+      340      "    init = _state.get('initial', {})\n",
+      341      "    ver  = _state.get('verified', {})\n",
+      342      "    mr   = _state.get('margin_results', {})\n",
+     ...
+      351      "\n",
+      352      "    init_total = init.get('total_grid_lines', 'N/A')\n",
+      353      "    ver_total  = ver.get('total_grid_lines', 'N/A')\n",
+      361 -    "\n",                                                     
+      362 -    "    if init_total == ver_total:\n",                      
+      363 -    "        ver_note = '(no change)'\n",                     
+      364 -    "    else:\n",                                            
+      365 -    "        ver_note = f'(changed from {init_total})'\n",    
+      366 -    "\n",                                                     
+      354 +    "    ver_note   = '(no change)' if init_total == ver_total
+          + else f'(changed from {init_total})'\n",                      
+      355      "    margin_note = 'skipped (confident)' if not mr else 'c
+           ompleted'\n",
+      368 -    "    used_hint   = '✓ yes' if fr.get('used_reference_hint'
+          -) else 'no'\n",                                               
+      356 +    "    used_hint  = '✓ yes' if fr.get('used_reference_hint')
+          + else 'no'\n",                                                
+      357 +    "    used_mem   = '✓ yes' if fr.get('used_correction_memor
+          +y') else 'no'\n",                                             
+      358      "\n",
+      359      "    W = 56\n",
+      360      "    def row(label, value):\n",
+      372 -    "        label_w = 32\n",                                 
+      373 -    "        value_w = W - label_w - 5\n",                    
+      374 -    "        return f\"║ {label:<{label_w}} ║ {str(value):<{va
+          -lue_w}} ║\"\n",                                               
+      361 +    "        lw = 32\n",                                      
+      362 +    "        return f\"║ {label:<{lw}} ║ {str(value):<{W-lw-5}
+          +} ║\"\n",                                                     
+      363      "\n",
+      364      "    sep = '╠' + '═'*34 + '╬' + '═'*(W-34-1) + '╣'\n",
+      365      "    top = '╔' + '═'*34 + '╦' + '═'*(W-34-1) + '╗'\n",
+      366      "    bot = '╚' + '═'*34 + '╩' + '═'*(W-34-1) + '╝'\n",
+      379 -    "    title_line = '║' + ' GRID LINE DETECTION SUMMARY'.cen
+          -ter(W) + '║'\n",                                              
+      367      "\n",
+      368      "    print(top)\n",
+      382 -    "    print(title_line)\n",                                
+      369 +    "    print('║' + ' GRID LINE DETECTION SUMMARY'.center(W) 
+          ++ '║')\n",                                                    
+      370      "    print(sep)\n",
+      371      "    print(row('Total grid lines detected', total))\n",
+      372      "    print(sep)\n",
+     ...
+      380      "    print(row('Agent confidence', f'{conf:.2f}'))\n",
+      381      "    print(row('Retries', retries))\n",
+      382      "    print(row('Used reference hint', used_hint))\n",
+      383 +    "    print(row('Used correction memory', used_mem))\n",   
+      384      "    print(bot)"
+      385     ]
+      386    },
+     ...
+      400     "outputs": [],
+      401     "source": [
+      402      "if 'full_result' not in _state:\n",
+      415 -    "    print(\"⚠ Skipping Section 7 (run Section 5 first).\"
+          -)\n",                                                         
+      403 +    "    print(\"⚠ Skipping (run Section 5 first).\")\n",     
+      404      "else:\n",
+      405      "    fr   = _state['full_result']\n",
+      406      "    init = _state.get('initial', {})\n",
+      407      "    ver  = _state.get('verified', {})\n",
+      408      "    mr   = _state.get('margin_results', {})\n",
+      421 -    "\n",                                                     
+      409      "    findings = []\n",
+      410      "    conf = float(fr.get('confidence', 0))\n",
+      411      "\n",
+      425 -    "    # 1. Low confidence\n",                              
+      412      "    if conf < 0.85:\n",
+      413      "        findings.append(\n",
+      428 -    "            f\"Confidence LOW ({conf:.2f}). Review margin
+          - scan results in Section 4. \"\n",                            
+      429 -    "            \"Consider increasing render DPI (try 300) fo
+          -r this floor plan.\"\n",                                      
+      414 +    "            f\"Confidence LOW ({conf:.2f}). Review margin
+          + scans in Section 4. \"\n",                                   
+      415 +    "            \"Consider recording a correction in Section 
+          +8 — the agent will use it next run.\"\n",                     
+      416      "        )\n",
+      417      "\n",
+      432 -    "    # 2. Initial vs verified mismatch\n",                
+      418      "    if init and ver:\n",
+      419      "        iv = sorted(init.get('vertical_labels', []))\n",
+      420      "        vv = sorted(ver.get('vertical_labels', []))\n",
+      421      "        ih = sorted(init.get('horizontal_labels', []))\n"
+           ,
+      422      "        vh = sorted(ver.get('horizontal_labels', []))\n",
+      438 -    "        inconsistent = []\n",                            
+      439 -    "        if iv != vv:\n",                                 
+      440 -    "            inconsistent += list(set(iv).symmetric_differ
+          -ence(set(vv)))\n",                                            
+      441 -    "        if ih != vh:\n",                                 
+      442 -    "            inconsistent += list(set(ih).symmetric_differ
+          -ence(set(vh)))\n",                                            
+      423 +    "        inconsistent = list(set(iv).symmetric_difference(
+          +set(vv)) |\n",                                                
+      424 +    "                           set(ih).symmetric_difference(s
+          +et(vh)))\n",                                                  
+      425      "        if inconsistent:\n",
+      426      "            findings.append(\n",
+      445 -    "                f\"SEA-LION changed its answer between in
+          -itial and verification. \"\n",                                
+      427 +    "                f\"SEA-LION changed its answer between pa
+          +sses. \"\n",                                                  
+      428      "                f\"Inconsistent labels: {sorted(set(incon
+           sistent))}. \"\n",
+      447 -    "                \"Try a higher DPI render or inspect thos
+          -e margin crops manually.\"\n",                                
+      429 +    "                \"Try higher DPI or record a correction t
+          +o lock in the right answer.\"\n",                             
+      430      "            )\n",
+      431      "\n",
+      450 -    "    # 3. Opposing margins inconsistent\n",               
+      432      "    if mr:\n",
+      433      "        for a, b in [('top', 'bottom'), ('left', 'right')
+           ]:\n",
+      434      "            la = sorted(mr.get(a, []))\n",
+     ...
+      436      "            if la != lb:\n",
+      437      "                diff = sorted(set(la).symmetric_differenc
+           e(set(lb)))\n",
+      438      "                findings.append(\n",
+      458 -    "                    f\"Labels on the {a.upper()} margin d
+          -iffer from the {b.upper()} margin: {diff}. \"\n",             
+      459 -    "                    \"May indicate non-standard conventio
+          -ns or partial labels. \"\n",                                  
+      439 +    "                    f\"Margins {a.upper()} and {b.upper()
+          +} disagree: {diff}. \"\n",                                    
+      440      "                    \"Inspect Section 4 crops manually.\"
+           \n",
+      441      "                )\n",
+      442      "\n",
+      463 -    "    # 4. Uncertain labels (\"?\" suffix)\n",             
+      464 -    "    uncertain = [\n",                                    
+      465 -    "        lbl for lbl in\n",                               
+      466 -    "        fr.get('vertical_labels', []) + fr.get('horizonta
+          -l_labels', [])\n",                                            
+      467 -    "        if '?' in str(lbl)\n",                           
+      468 -    "    ]\n",                                                
+      443 +    "    uncertain = [lbl for lbl in\n",                      
+      444 +    "                 fr.get('vertical_labels', []) + fr.get('
+          +horizontal_labels', [])\n",                                   
+      445 +    "                 if '?' in str(lbl)]\n",                 
+      446      "    if uncertain:\n",
+      447      "        findings.append(\n",
+      471 -    "            f\"{len(uncertain)} label(s) flagged as uncer
+          -tain by SEA-LION: {uncertain}. \"\n",                         
+      472 -    "            \"Inspect the relevant margin crop in Section
+          - 4.\"\n",                                                     
+      448 +    "            f\"{len(uncertain)} label(s) flagged uncertai
+          +n: {uncertain}. \"\n",                                        
+      449 +    "            \"Inspect margin crops in Section 4.\"\n",   
+      450      "        )\n",
+      451      "\n",
+      475 -    "    # 5. Multiple retries\n",                            
+      452      "    retries = len([s for s in fr.get('steps_taken', []) i
+           f 'Attempt' in s])\n",
+      453      "    if retries > 1:\n",
+      454      "        findings.append(\n",
+      479 -    "            f\"Agent retried {retries} time(s) before rea
+          -ching a result. \"\n",                                        
+      480 -    "            \"Consider whether this PDF needs a higher DP
+          -I or a prompt adjustment.\"\n",                               
+      455 +    "            f\"Agent retried {retries} time(s). Consider 
+          +recording a correction \"\n",                                 
+      456 +    "            \"in Section 8 to avoid repeated low-confiden
+          +ce runs on this PDF.\"\n",                                    
+      457      "        )\n",
+      458      "\n",
+      483 -    "    # 6. Reference hint was used\n",                     
+      459      "    if fr.get('used_reference_hint'):\n",
+      460      "        findings.append(\n",
+      461      "            \"Agent used the reference notebook hint (las
+           t resort). \"\n",
+      487 -    "            \"The floor plan may have unusual conventions
+          - — review the final labels carefully.\"\n",                   
+      462 +    "            \"Record a correction in Section 8 to avoid t
+          +his next time.\"\n",                                          
+      463      "        )\n",
+      464      "\n",
+      490 -    "    print(\"\\n## Improvement Areas\")\n",               
+      465 +    "    print(\"## Improvement Areas\")\n",                  
+      466      "    print(\"=\" * 60)\n",
+      467      "    if not findings:\n",
+      468      "        print(\"  ✓ High confidence detection. No improve
+           ment actions needed.\")\n",
+     ...
+      471      "            print(f\"  • {finding}\")\n",
+      472      "            print()"
+      473     ]
+      474 +  },                                                          
+      475 +  {                                                           
+      476 +   "cell_type": "markdown",                                   
+      477 +   "metadata": {},                                            
+      478 +   "source": [                                                
+      479 +    "## Section 8 — Memory & Run History\n",                  
+      480 +    "\n",                                                     
+      481 +    "View past detection runs and any corrections recorded for
+          + this PDF."                                                   
+      482 +   ]                                                          
+      483 +  },                                                          
+      484 +  {                                                           
+      485 +   "cell_type": "code",                                       
+      486 +   "execution_count": null,                                   
+      487 +   "metadata": {},                                            
+      488 +   "outputs": [],                                             
+      489 +   "source": [                                                
+      490 +    "print(\"── Memory Stats ─────────────────────────────────
+          +\")\n",                                                       
+      491 +    "stats = tools.tool_memory_stats()\n",                    
+      492 +    "for k, v in stats.items():\n",                           
+      493 +    "    print(f\"  {k:<28} {v}\")\n",                        
+      494 +    "\n",                                                     
+      495 +    "print()\n",                                              
+      496 +    "print(\"── Recent Runs ──────────────────────────────────
+          +\")\n",                                                       
+      497 +    "runs = tools.tool_memory_search(limit=10)\n",            
+      498 +    "if not runs:\n",                                         
+      499 +    "    print(\"  (no runs recorded yet — run Section 5 first
+          +)\")\n",                                                      
+      500 +    "else:\n",                                                
+      501 +    "    print(f\"{'Timestamp':<24} {'PDF':<30} {'Lines':>6} {
+          +'Conf':>6} {'DPI':>5}\")\n",                                  
+      502 +    "    print(\"-\" * 75)\n",                                
+      503 +    "    for r in runs:\n",                                   
+      504 +    "        ts   = r['timestamp'][:19]\n",                   
+      505 +    "        pdf  = os.path.basename(r['pdf_path'])[:29]\n",  
+      506 +    "        lines = r['total_grid_lines']\n",                
+      507 +    "        conf  = r['confidence']\n",                      
+      508 +    "        dpi   = r['dpi']\n",                             
+      509 +    "        print(f\"{ts:<24} {pdf:<30} {lines:>6} {conf:>6.2
+          +f} {dpi:>5}\")\n",                                            
+      510 +    "\n",                                                     
+      511 +    "if os.path.isfile(PDF_PATH):\n",                         
+      512 +    "    print()\n",                                          
+      513 +    "    print(\"── Corrections for this PDF ─────────────────
+          +────\")\n",                                                   
+      514 +    "    corrs = tools.tool_memory_corrections(PDF_PATH)\n",  
+      515 +    "    if not corrs:\n",                                    
+      516 +    "        print(\"  (no corrections recorded yet)\")\n",   
+      517 +    "    else:\n",                                            
+      518 +    "        for i, c in enumerate(corrs):\n",                
+      519 +    "            print(f\"  [{i+1}] {c['timestamp'][:19]}\")\n
+          +",                                                            
+      520 +    "            print(f\"       Vertical:   {c['vertical_labe
+          +ls']}\")\n",                                                  
+      521 +    "            print(f\"       Horizontal: {c['horizontal_la
+          +bels']}\")\n",                                                
+      522 +    "            if c['notes']:\n",                           
+      523 +    "                print(f\"       Notes: {c['notes']}\")\n"
+          +,                                                             
+      524 +    "            print()"                                     
+      525 +   ]                                                          
+      526 +  },                                                          
+      527 +  {                                                           
+      528 +   "cell_type": "markdown",                                   
+      529 +   "metadata": {},                                            
+      530 +   "source": [                                                
+      531 +    "## Section 9 — Add / Edit a Correction\n",               
+      532 +    "\n",                                                     
+      533 +    "After reviewing the detection, record the correct grid la
+          +bels here.\n",                                                
+      534 +    "The agent will use this correction as a strong prior on e
+          +very future run of this PDF.\n",                              
+      535 +    "\n",                                                     
+      536 +    "**Instructions:**\n",                                    
+      537 +    "1. Look at the annotated image in Section 5\n",          
+      538 +    "2. Edit `CORRECT_VERTICAL` and `CORRECT_HORIZONTAL` below
+          + to match the actual labels\n",                               
+      539 +    "3. Run this cell — the correction is saved immediately"  
+      540 +   ]                                                          
+      541 +  },                                                          
+      542 +  {                                                           
+      543 +   "cell_type": "code",                                       
+      544 +   "execution_count": null,                                   
+      545 +   "metadata": {},                                            
+      546 +   "outputs": [],                                             
+      547 +   "source": [                                                
+      548 +    "if not os.path.isfile(PDF_PATH):\n",                     
+      549 +    "    print(\"⚠ PDF not found — set PDF_PATH in Section 0.\
+          +")\n",                                                        
+      550 +    "else:\n",                                                
+      551 +    "    # ── EDIT THESE ─────────────────────────────────────
+          +───────\n",                                                   
+      552 +    "    CORRECT_VERTICAL   = [\"1\", \"2\", \"3\", \"4\", \"5
+          +\"]   # column labels (numbers)\n",                           
+      553 +    "    CORRECT_HORIZONTAL = [\"A\", \"B\", \"C\", \"D\"]    
+          +     # row labels (letters)\n",                               
+      554 +    "    CORRECTION_NOTES   = \"\"                            
+          +# optional: what was wrong\n",                                
+      555 +    "    # ───────────────────────────────────────────────────
+          +───────\n",                                                   
+      556 +    "\n",                                                     
+      557 +    "    result = tools.tool_memory_add_correction(\n",       
+      558 +    "        PDF_PATH,\n",                                    
+      559 +    "        vertical_labels=CORRECT_VERTICAL,\n",            
+      560 +    "        horizontal_labels=CORRECT_HORIZONTAL,\n",        
+      561 +    "        notes=CORRECTION_NOTES,\n",                      
+      562 +    "    )\n",                                                
+      563 +    "    print(f\"✓ Correction saved.\")\n",                  
+      564 +    "    print(f\"  PDF hash:          {result['pdf_hash']}\")
+          +\n",                                                          
+      565 +    "    print(f\"  Total corrections: {result['total_correcti
+          +ons']}\")\n",                                                 
+      566 +    "    print(f\"  Vertical:          {CORRECT_VERTICAL}\")\n
+          +",                                                            
+      567 +    "    print(f\"  Horizontal:        {CORRECT_HORIZONTAL}\")
+          +\n",                                                          
+      568 +    "    print()\n",                                          
+      569 +    "    print(\"The agent will use this correction as strong 
+          +prior knowledge next run.\")\n",                              
+      570 +    "    print(\"Re-run Section 10 to see the correction-infor
+          +med result immediately.\")"                                   
+      571 +   ]                                                          
+      572 +  },                                                          
+      573 +  {                                                           
+      574 +   "cell_type": "markdown",                                   
+      575 +   "metadata": {},                                            
+      576 +   "source": [                                                
+      577 +    "### Undo Last Correction\n",                             
+      578 +    "\n",                                                     
+      579 +    "Run this cell to remove the most recent correction for th
+          +is PDF."                                                      
+      580 +   ]                                                          
+      581 +  },                                                          
+      582 +  {                                                           
+      583 +   "cell_type": "code",                                       
+      584 +   "execution_count": null,                                   
+      585 +   "metadata": {},                                            
+      586 +   "outputs": [],                                             
+      587 +   "source": [                                                
+      588 +    "if not os.path.isfile(PDF_PATH):\n",                     
+      589 +    "    print(\"⚠ PDF not found.\")\n",                      
+      590 +    "else:\n",                                                
+      591 +    "    result = tools.tool_memory_undo_correction(PDF_PATH)\
+          +n",                                                           
+      592 +    "    if result['ok']:\n",                                 
+      593 +    "        print(f\"✓ Last correction removed for PDF hash {
+          +result['pdf_hash']}.\")\n",                                   
+      594 +    "        prev = tools.tool_memory_lookup(PDF_PATH)\n",    
+      595 +    "        if prev:\n",                                     
+      596 +    "            print(f\"  Restored previous correction from 
+          +{prev['timestamp'][:19]}\")\n",                               
+      597 +    "        else:\n",                                        
+      598 +    "            print(\"  No earlier correction — memory is n
+          +ow clear for this PDF.\")\n",                                 
+      599 +    "    else:\n",                                            
+      600 +    "        print(f\"⚠ {result['msg']}\")"                   
+      601 +   ]                                                          
+      602 +  },                                                          
+      603 +  {                                                           
+      604 +   "cell_type": "markdown",                                   
+      605 +   "metadata": {},                                            
+      606 +   "source": [                                                
+      607 +    "## Section 10 — Correction-Informed Re-run\n",           
+      608 +    "\n",                                                     
+      609 +    "Re-run the full agent after saving a correction in Sectio
+          +n 9.\n",                                                      
+      610 +    "The agent reads the correction from memory.json and injec
+          +ts it as a strong context\n",                                 
+      611 +    "hint before the initial detection — this is the closed lo
+          +op.\n",                                                       
+      612 +    "\n",                                                     
+      613 +    "Compare the result here against Section 5 to see the impr
+          +ovement."                                                     
+      614 +   ]                                                          
+      615 +  },                                                          
+      616 +  {                                                           
+      617 +   "cell_type": "code",                                       
+      618 +   "execution_count": null,                                   
+      619 +   "metadata": {},                                            
+      620 +   "outputs": [],                                             
+      621 +   "source": [                                                
+      622 +    "if not SEALION_ONLINE or not os.path.isfile(PDF_PATH):\n"
+          +,                                                             
+      623 +    "    print(\"⚠ Skipping (SEA-LION offline or PDF missing).
+          +\")\n",                                                       
+      624 +    "else:\n",                                                
+      625 +    "    correction = tools.tool_memory_lookup(PDF_PATH)\n",  
+      626 +    "    if not correction:\n",                               
+      627 +    "        print(\"⚠ No correction found for this PDF. Run S
+          +ection 9 first.\")\n",                                        
+      628 +    "    else:\n",                                            
+      629 +    "        print(f\"📌 Correction active:\")\n",            
+      630 +    "        print(f\"   Vertical:   {correction['vertical_lab
+          +els']}\")\n",                                                 
+      631 +    "        print(f\"   Horizontal: {correction['horizontal_l
+          +abels']}\")\n",                                               
+      632 +    "        if correction.get('notes'):\n",                  
+      633 +    "            print(f\"   Notes: {correction['notes']}\")\n
+          +",                                                            
+      634 +    "        print()\n",                                      
+      635 +    "        print(\"Running full agent with correction memory
+          +...\")\n",                                                    
+      636 +    "        print(\"=\" * 60)\n",                            
+      637 +    "        corrected_result = agent.run(PDF_PATH, verbose=Tr
+          +ue)\n",                                                       
+      638 +    "        _state['corrected_result'] = corrected_result\n",
+      639 +    "        print(\"=\" * 60)\n",                            
+      640 +    "\n",                                                     
+      641 +    "        # Compare with original run from Section 5\n",   
+      642 +    "        original = _state.get('full_result', {})\n",     
+      643 +    "        print(f\"\\n{'Field':<25} {'Original (§5)':<35} {
+          +'Corrected (§10)':<35}\")\n",                                 
+      644 +    "        print(\"-\" * 95)\n",                            
+      645 +    "        for field in ('total_grid_lines', 'vertical_label
+          +s', 'horizontal_labels', 'confidence'):\n",                   
+      646 +    "            a = original.get(field, 'N/A')\n",           
+      647 +    "            b = corrected_result.get(field, 'N/A')\n",   
+      648 +    "            if isinstance(a, list): a = ' '.join(a)\n",  
+      649 +    "            if isinstance(b, list): b = ' '.join(b)\n",  
+      650 +    "            changed = \" ← changed\" if str(a) != str(b) 
+          +else \"\"\n",                                                 
+      651 +    "            print(f\"{field:<25} {str(a):<35} {str(b):<35
+          +}{changed}\")\n",                                             
+      652 +    "\n",                                                     
+      653 +    "        print()\n",                                      
+      654 +    "        mem_flag = corrected_result.get('used_correction_
+          +memory', False)\n",                                           
+      655 +    "        print(f\"  used_correction_memory: {'✓ yes' if me
+          +m_flag else 'no'}\")\n",                                      
+      656 +    "\n",                                                     
+      657 +    "        # Annotated image for corrected result\n",       
+      658 +    "        try:\n",                                         
+      659 +    "            from PIL import ImageDraw, ImageFont\n",     
+      660 +    "            img_path = corrected_result.get('_rendered_im
+          +age')\n",                                                     
+      661 +    "            if img_path:\n",                             
+      662 +    "                img = Image.open(img_path).convert('RGB')
+          +\n",                                                          
+      663 +    "                draw = ImageDraw.Draw(img)\n",           
+      664 +    "                w, h = img.size\n",                      
+      665 +    "                try:\n",                                 
+      666 +    "                    font = ImageFont.truetype(\"/usr/shar
+          +e/fonts/truetype/dejavu/DejaVuSans-Bold.ttf\", 28)\n",        
+      667 +    "                except IOError:\n",                      
+      668 +    "                    font = ImageFont.load_default()\n",  
+      669 +    "\n",                                                     
+      670 +    "                for i, lbl in enumerate(corrected_result.
+          +get('vertical_labels', [])):\n",                              
+      671 +    "                    n = len(corrected_result['vertical_la
+          +bels'])\n",                                                   
+      672 +    "                    x = (w // (n + 1)) * (i + 1)\n",     
+      673 +    "                    draw.rectangle([x-20, 10, x+20, 44], 
+          +fill=(100,255,100))\n",                                       
+      674 +    "                    draw.text((x-15, 12), lbl, fill=(0,0,
+          +0), font=font)\n",                                            
+      675 +    "\n",                                                     
+      676 +    "                for i, lbl in enumerate(corrected_result.
+          +get('horizontal_labels', [])):\n",                            
+      677 +    "                    n = len(corrected_result['horizontal_
+          +labels'])\n",                                                 
+      678 +    "                    y = (h // (n + 1)) * (i + 1)\n",     
+      679 +    "                    draw.rectangle([10, y-17, 50, y+17], 
+          +fill=(100,255,100))\n",                                       
+      680 +    "                    draw.text((12, y-14), lbl, fill=(0,0,
+          +0), font=font)\n",                                            
+      681 +    "\n",                                                     
+      682 +    "                fig, ax = plt.subplots(figsize=(16, 12))\
+          +n",                                                           
+      683 +    "                ax.imshow(img)\n",                       
+      684 +    "                ax.set_title(\"Correction-Informed Result
+          + (green = memory-assisted)\", fontsize=14)\n",                
+      685 +    "                ax.axis('off')\n",                       
+      686 +    "                plt.tight_layout()\n",                   
+      687 +    "                plt.show()\n",                           
+      688 +    "        except Exception as e:\n",                       
+      689 +    "            print(f\"(Annotation skipped: {e})\")"       
+      690 +   ]                                                          
+      691    }
+      692   ],
+      693   "metadata": {
+
+● Verify everything is clean:
+
+● Bash(python3 -c "
+      import ast, sys…)
+  ⎿    ✓ tools.py
+       ✓ agent.py
+       ✓ main.py
+     … +9 lines (ctrl+o to expand)
+
+● Bash(python3 -c "
+      # Dry-run: check that all imports resolve statically (no Ollama needed)…)
+  ⎿  tools imports from agent.py:
+       from tools import ['tool_render_pdf', 'tool_detect_grid', 'tool_veri
+     fy', 'tool_zoom_margin', 'tool_reconcile', 'tool_read_reference', 'too
+     … +14 lines (ctrl+o to expand)
+
+● All imports resolve. Here's the complete picture of what was built:
+
+  ---
+  What was built
+
+  tools.py (new — 18 KB)
+
+  All tool functions extracted from agent.py, plus a full correction memory
+  system:
+
+  ┌─────────────────────────────┬────────────────────────────────────────────┐
+  │          Function           │                  Purpose                   │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_render_pdf             │ PDF → images                               │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_detect_grid            │ Full image detection (now takes prompt as  │
+  │                             │ arg)                                       │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_verify                 │ Second-pass verification                   │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_zoom_margin            │ Crop + scan a margin band                  │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_reconcile              │ Reconcile full + margin results            │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_read_reference         │ Last-resort hint from notebook             │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_lookup          │ Look up latest human correction for a PDF  │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_save_run        │ Persist a completed run to SQLite          │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_add_correction  │ Record a human correction → SQLite +       │
+  │                             │ memory.json                                │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_undo_correction │ Remove latest correction, restore previous │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_search          │ Query past runs                            │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_corrections     │ List all corrections for a PDF             │
+  ├─────────────────────────────┼────────────────────────────────────────────┤
+  │ tool_memory_stats           │ Aggregate stats                            │
+  └─────────────────────────────┴────────────────────────────────────────────┘
+
+  Storage: grid_memory.db (SQLite, tables: runs, grid_results, corrections) +
+  memory.json (fast per-PDF hash cache).
+
+  agent.py (updated)
+
+  - Imports all tools from tools.py
+  - Memory-first loop: Before Step 2, calls tool_memory_lookup() — if a human
+  correction exists, it's injected as MEMORY_HINT_PROMPT into the initial
+  detection prompt
+  - Saves every run to SQLite via tool_memory_save_run()
+  - Sets used_correction_memory: true in output when memory was active
+
+  test_grid_detection.ipynb (updated — 3 new sections)
+
+  ┌───────────────────────────┬─────────────────────────────────────────────┐
+  │          Section          │                   Purpose                   │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ §8 — Memory & Run History │ View stats, past runs table, all            │
+  │                           │ corrections for this PDF                    │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ §9 — Add / Edit a         │ Edit labels, call                           │
+  │ Correction                │ tool_memory_add_correction(), undo support  │
+  ├───────────────────────────┼─────────────────────────────────────────────┤
+  │ §10 — Correction-Informed │ Full agent re-run with memory active;       │
+  │  Re-run                   │ side-by-side diff vs §5                     │
+  └───────────────────────────┴─────────────────────────────────────────────┘
+
+  The loop: detect → review in §5 → correct in §9 → re-run in §10 → see the
+  improvement → next run automatically uses the correction.
+
+✻ Worked for 5m 34s
+
+❯ /simplify                                                                     
+
+● Bash(cd /home/jiezhi/Documents/mcc-amplify-v2 && git diff HEAD --stat && git
+      status --short)
+  ⎿   grid-detection-agent/agent.py                  |  273 +-
+      grid-detection-agent/main.py                   |   20 +-
+      grid-detection-agent/pdf_renderer.py           |    2 +-
+     … +15 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to 
+     /home/jiezhi/Documents/mcc-amplify-v2/grid-detection-agent
+
+  Read 2 files (ctrl+o to expand)
+
+● Good. Now launching three parallel review agents with the full content:
+
+● 3 background agents launched (↓ to manage)
+   ├─ Code reuse review
+   ├─ Code quality review
+   └─ Efficiency review
+
+● Waiting for all three agents...
+
+✻ Sautéed for 1m 27s
+
+● Agent "Code reuse review" completed
+
+● Agent "Code quality review" completed
+
+● Still waiting for the efficiency agent...
+
+● Agent "Efficiency review" completed
+
+● All three done. Actionable fixes:
+
+  1. _db() runs schema DDL every call — guard with a module-level flag (schema
+  init once)
+  2. tool_memory_undo_correction() double-write — load once, modify, single
+  write at end
+  3. tool_memory_search() duplicate SQL — unify with optional WHERE
+  4. tool_memory_stats() 4 queries — collapse to one SELECT with subqueries
+  5. Repeated _row_to_correction pattern — extract shared helper
+  6. _mjson_load() swallows all exceptions — only catch JSONDecodeError
+  7. detect_prompt rebuilt every retry — compute once before the loop
+  8. used_correction_memory = True set every iteration — set once before loop
+
+  Skipped: connection pooling (overkill for local tool), pdf_hash triple-read
+  (insignificant — 64KB read, rare), dataclasses (out of scope), verbose →
+  logger (out of scope).
+
+● Update(tools.py)
+  ⎿  Added 4 lines, removed 1 line
+      39  
+      40  MARGIN_FRACTION = 0.12
+      41  _reference_hint_cache: str | None = None
+      42 +_schema_initialized = False                                    
+      43  
+      44  
+      45  # ── DATABASE ─────────────────────────────────────────────────
+          ─────────────────
+      46  
+      47  def _db() -> sqlite3.Connection:
+      48 +    global _schema_initialized                                 
+      49      con = sqlite3.connect(DB_PATH)
+      50      con.row_factory = sqlite3.Row
+      49 -    con.executescript("""                                      
+      51 +    if not _schema_initialized:                                
+      52 +        con.executescript("""                                  
+      53          CREATE TABLE IF NOT EXISTS runs (
+      54              run_id      TEXT PRIMARY KEY,
+      55              timestamp   TEXT NOT NULL,
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(tools.py)
+  ⎿  Added 1 line
+      81          CREATE INDEX IF NOT EXISTS idx_runs_hash  ON runs(pdf_h
+          ash);
+      82          CREATE INDEX IF NOT EXISTS idx_corr_hash  ON correction
+          s(pdf_hash);
+      83      """)
+      84 +        _schema_initialized = True                             
+      85      return con
+      86  
+      87  
+
+● Update(tools.py)
+  ⎿  Added 1 line, removed 1 line
+       99      if MEMORY_JSON_PATH.exists():
+      100          try:
+      101              return json.loads(MEMORY_JSON_PATH.read_text())
+      102 -        except Exception:                                     
+      102 +        except (json.JSONDecodeError, UnicodeDecodeError):    
+      103              pass
+      104      return {"version": 1, "corrections": {}}
+      105  
+
+● Now add the _row_to_correction helper right after _mjson_save:
+
+● Update(tools.py)
+  ⎿  Added 10 lines
+      108      MEMORY_JSON_PATH.write_text(json.dumps(data, indent=2))
+      109  
+      110  
+      111 +def _row_to_correction(row) -> dict:                          
+      112 +    """Convert a SQLite corrections row to the standard correc
+          +tion dict."""                                                 
+      113 +    return {                                                  
+      114 +        "vertical_labels":   json.loads(row["vertical_labels"]
+          +),                                                            
+      115 +        "horizontal_labels": json.loads(row["horizontal_labels
+          +"]),                                                          
+      116 +        "notes":     row["notes"] or "",                      
+      117 +        "timestamp": row["timestamp"],                        
+      118 +    }                                                         
+      119 +                                                              
+      120 +                                                              
+      121  # ── RENDERING TOOL ──────────────────────────────────────────
+           ──────────────────
+      122  
+      123  def tool_render_pdf(pdf_path: str, dpi: int = 200) -> dict:
+
+● Now use _row_to_correction in tool_memory_lookup and tool_memory_corrections,
+  fix tool_memory_undo_correction (single write), unify tool_memory_search SQL,
+  and collapse tool_memory_stats:
+
+● Update(tools.py)
+  ⎿  Added 1 line, removed 6 lines
+      264      ).fetchone()
+      265      con.close()
+      266      if row:
+      267 -        return {                                              
+      268 -            "vertical_labels":   json.loads(row["vertical_labe
+          -ls"]),                                                        
+      269 -            "horizontal_labels": json.loads(row["horizontal_la
+          -bels"]),                                                      
+      270 -            "notes":     row["notes"] or "",                  
+      271 -            "timestamp": row["timestamp"],                    
+      272 -        }                                                     
+      267 +        return _row_to_correction(row)                        
+      268      return None
+      269  
+      270  
+
+● Update(tools.py)
+  ⎿  Added 3 lines, removed 8 lines
+      366      data  = _mjson_load()
+      367      if phash not in data["corrections"]:
+      368          return {"ok": False, "msg": "no correction found for t
+           his PDF"}
+      369 +                                                              
+      370      del data["corrections"][phash]
+      370 -    _mjson_save(data)                                         
+      371  
+      372      # Restore the previous correction from SQLite if one exist
+           s
+      373      con = _db()
+     ...
+      378      ).fetchone()
+      379      con.close()
+      380      if row:
+      381 -        data["corrections"][phash] = {                        
+      382 -            "vertical_labels":   json.loads(row["vertical_labe
+          -ls"]),                                                        
+      383 -            "horizontal_labels": json.loads(row["horizontal_la
+          -bels"]),                                                      
+      384 -            "notes":     row["notes"] or "",                  
+      385 -            "timestamp": row["timestamp"],                    
+      386 -        }                                                     
+      387 -        _mjson_save(data)                                     
+      381 +        data["corrections"][phash] = _row_to_correction(row)  
+      382  
+      383 +    _mjson_save(data)  # single write regardless of restore pa
+          +th                                                            
+      384      return {"ok": True, "pdf_hash": phash}
+      385  
+      386  
+● Update(tools.py)
+  ⎿  Added 10 lines, removed 18 lines
+      390  
+      391      Returns a list of dicts with run metadata and detected lab
+           els.
+      392      """
+      393 -    con = _db()                                               
+      394 -    if pdf_path:                                              
+      395 -        rows = con.execute(                                   
+      396 -            """SELECT r.run_id, r.timestamp, r.pdf_path, r.dpi
+          -, r.confidence,                                               
+      397 -                      g.vertical_labels, g.horizontal_labels, 
+          -g.total_grid_lines                                            
+      398 -               FROM runs r JOIN grid_results g ON g.run_id = r
+          -.run_id                                                       
+      399 -               WHERE r.pdf_path LIKE ?                        
+      400 -               ORDER BY r.timestamp DESC LIMIT ?""",          
+      401 -            (f"%{pdf_path}%", limit)                          
+      402 -        ).fetchall()                                          
+      403 -    else:                                                     
+      404 -        rows = con.execute(                                   
+      405 -            """SELECT r.run_id, r.timestamp, r.pdf_path, r.dpi
+          -, r.confidence,                                               
+      406 -                      g.vertical_labels, g.horizontal_labels, 
+          -g.total_grid_lines                                            
+      407 -               FROM runs r JOIN grid_results g ON g.run_id = r
+          -.run_id                                                       
+      408 -               ORDER BY r.timestamp DESC LIMIT ?""",          
+      409 -            (limit,)                                          
+      410 -        ).fetchall()                                          
+      393 +    where  = "WHERE r.pdf_path LIKE ? " if pdf_path else ""   
+      394 +    params = ([f"%{pdf_path}%"] if pdf_path else []) + [limit]
+      395 +    con    = _db()                                            
+      396 +    rows   = con.execute(                                     
+      397 +        f"""SELECT r.run_id, r.timestamp, r.pdf_path, r.dpi, r
+          +.confidence,                                                  
+      398 +                   g.vertical_labels, g.horizontal_labels, g.t
+          +otal_grid_lines                                               
+      399 +            FROM runs r JOIN grid_results g ON g.run_id = r.ru
+          +n_id                                                          
+      400 +            {where}ORDER BY r.timestamp DESC LIMIT ?""",      
+      401 +        params                                                
+      402 +    ).fetchall()                                              
+      403      con.close()
+      404  
+      405      result = []
+
+● Update(tools.py)
+  ⎿  Added 1 line, removed 9 lines
+      421          (phash,)
+      422      ).fetchall()
+      423      con.close()
+      424 -    return [                                                  
+      425 -        {                                                     
+      426 -            "vertical_labels":   json.loads(r["vertical_labels
+          -"]),                                                          
+      427 -            "horizontal_labels": json.loads(r["horizontal_labe
+          -ls"]),                                                        
+      428 -            "notes":     r["notes"] or "",                    
+      429 -            "timestamp": r["timestamp"],                      
+      430 -        }                                                     
+      431 -        for r in rows                                         
+      432 -    ]                                                         
+      424 +    return [_row_to_correction(r) for r in rows]              
+      425  
+      426  
+      427  def tool_memory_stats() -> dict:
+
+● Update(tools.py)
+  ⎿  Added 11 lines, removed 8 lines
+      427  def tool_memory_stats() -> dict:
+      428      """Aggregate statistics across all stored runs and correct
+           ions."""
+      429      con = _db()
+      430 -    total_runs  = con.execute("SELECT COUNT(*) FROM runs").fet
+          -chone()[0]                                                    
+      431 -    total_corr  = con.execute("SELECT COUNT(*) FROM correction
+          -s").fetchone()[0]                                             
+      432 -    avg_conf    = con.execute("SELECT AVG(confidence) FROM run
+          -s").fetchone()[0]                                             
+      433 -    total_lines = con.execute("SELECT SUM(total_grid_lines) FR
+          -OM grid_results").fetchone()[0]                               
+      430 +    row = con.execute("""                                     
+      431 +        SELECT                                                
+      432 +            (SELECT COUNT(*)          FROM runs)              
+          +AS total_runs,                                                
+      433 +            (SELECT COUNT(*)          FROM corrections)       
+          + AS total_corr,                                               
+      434 +            (SELECT AVG(confidence)   FROM runs)              
+          +AS avg_conf,                                                  
+      435 +            (SELECT SUM(total_grid_lines) FROM grid_results)  
+          +AS total_lines                                                
+      436 +    """).fetchone()                                           
+      437      con.close()
+      438      return {
+      436 -        "total_runs":       total_runs,                       
+      437 -        "total_corrections": total_corr,                      
+      438 -        "avg_confidence":   round(avg_conf or 0.0, 3),        
+      439 -        "total_lines_detected": total_lines or 0,             
+      439 +        "total_runs":           row["total_runs"]  or 0,      
+      440 +        "total_corrections":    row["total_corr"]  or 0,      
+      441 +        "avg_confidence":       round(row["avg_conf"] or 0.0, 
+          +3),                                                           
+      442 +        "total_lines_detected": row["total_lines"] or 0,      
+      443      }
+      444  
+      445  
+
+● Now fix agent.py — compute detect_prompt and set used_correction_memory once
+  before the loop:
+
+● Update(agent.py)
+  ⎿  Added 10 lines, removed 11 lines
+      192      # ── MEMORY LOOKUP — check for human corrections before an
+           y detection ───────
+      193      correction = tool_memory_lookup(pdf_path)
+      194      if correction:
+      195 +        detect_prompt = MEMORY_HINT_PROMPT.format(            
+      196 +            system_prompt=SYSTEM_PROMPT,                      
+      197 +            vertical_labels=correction["vertical_labels"],    
+      198 +            horizontal_labels=correction["horizontal_labels"],
+      199 +            notes=correction.get("notes", ""),                
+      200 +        )                                                     
+      201 +        used_correction_memory = True                         
+      202          log(
+      203              f"Correction memory: found prior correction — "
+      204              f"V={correction['vertical_labels']} H={correction[
+           'horizontal_labels']}"
+      205          )
+      206 +    else:                                                     
+      207 +        detect_prompt = SYSTEM_PROMPT                         
+      208  
+      209      while attempt < MAX_RETRIES:
+      210          attempt += 1
+     ...
+      221  
+      222          # ── STEP 2: INITIAL DETECTION ───────────────────────
+           ──────────────────
+      223          log("Step 2: Initial grid detection.")
+      215 -        if correction:                                        
+      216 -            # Inject correction memory as a strong prior into 
+          -the first prompt                                              
+      217 -            detect_prompt = MEMORY_HINT_PROMPT.format(        
+      218 -                system_prompt=SYSTEM_PROMPT,                  
+      219 -                vertical_labels=correction["vertical_labels"],
+      220 -                horizontal_labels=correction["horizontal_label
+          -s"],                                                          
+      221 -                notes=correction.get("notes", ""),            
+      222 -            )                                                 
+      223 -            used_correction_memory = True                     
+      224 +        if used_correction_memory:                            
+      225              log("  Using correction memory hint in prompt.")
+      225 -        else:                                                 
+      226 -            detect_prompt = SYSTEM_PROMPT                     
+      226  
+      227          initial_result = tool_detect_grid(floor_plan_image, de
+           tect_prompt)
+      228          log(
+
+● Now verify syntax and confirm fixes are clean:
+
+● Bash(python3 -c "
+      import ast…)
+  ⎿    ✓ tools.py
+       ✓ agent.py
+     ---
+     … +14 lines (ctrl+o to expand)
+
+● All clean. Here's what was fixed:
+
+  tools.py
+  - _db() schema DDL now runs only once per process (module-level
+  _schema_initialized flag) — was re-running CREATE TABLE IF NOT EXISTS + index
+  creation on every DB call
+  - tool_memory_undo_correction() double-write bug fixed — now loads once,
+  optionally restores from SQLite, writes once at the end
+  - tool_memory_search() duplicate SQL blocks unified — single query with an
+  optional WHERE clause built from where/params
+  - tool_memory_stats() 4 round-trips → 1 query with scalar subqueries
+  - _row_to_correction() helper extracted — removes identical dict-building
+  pattern repeated in tool_memory_lookup, tool_memory_corrections, and
+  tool_memory_undo_correction
+  - _mjson_load() now only catches JSONDecodeError | UnicodeDecodeError instead
+  of all exceptions (disk/permission errors now propagate correctly)
+
+  agent.py
+  - detect_prompt and used_correction_memory now computed once before the retry
+  loop — were rebuilt/re-set on every iteration even though correction never
+  changes mid-run
+
+✻ Cooked for 2m 25s
