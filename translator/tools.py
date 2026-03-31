@@ -17,16 +17,16 @@ Revit Transaction JSON schema (consumed by ModelBuilder.cs on Windows):
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import json
 import os
 import sqlite3
-import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import requests
 
 _DIR     = Path(__file__).parent
 _DB_PATH = _DIR / "memory.sqlite"
@@ -478,10 +478,11 @@ def revit_api_client(
     """
     Send a Revit Transaction JSON to the Windows Revit Add-in server.
 
-    Attempts to import the RevitClient from the v1 project (mcc-amplify-ai)
-    via PYTHONPATH.  Falls back to file-drop mode if the HTTP server is
-    unreachable.  Returns a structured result including any C#/.NET error text
-    captured by the WarningCollector in the Add-in.
+    Mirrors the v1 RevitClient._build_via_http() call exactly:
+      POST {WINDOWS_REVIT_SERVER}/build-model
+      Header: X-API-Key: <REVIT_SERVER_API_KEY>
+      Body:   {"job_id": str, "transaction_json": str}   ← JSON string, not object
+      Response: raw binary .rvt bytes (OLE Compound Document)
 
     Args:
         transaction_json: Dict produced by revit_schema_mapper().
@@ -492,44 +493,97 @@ def revit_api_client(
         {
           "ok":        bool,
           "rvt_path":  str | None,
-          "warnings":  [str],       — Revit build warnings (non-fatal)
+          "warnings":  [str],       — Revit build warnings from x-revit-warnings header
           "error_log": str | None,  — C#/.NET exception text (if failed)
           "job_id":    str,
         }
     """
-    job_id   = job_id or str(uuid.uuid4())
-    out_path = Path(output_dir)
-    tmp_json = out_path / f"{job_id}_transaction.json"
+    job_id     = job_id or str(uuid.uuid4())
+    server_url = os.getenv("WINDOWS_REVIT_SERVER", "http://localhost:5000")
+    api_key    = os.getenv("REVIT_SERVER_API_KEY", "my-revit-key-2023")
+    timeout    = int(os.getenv("REVIT_TIMEOUT", "300"))
+    out_path   = Path(output_dir)
 
     try:
         out_path.mkdir(parents=True, exist_ok=True)
-        tmp_json.write_text(json.dumps(transaction_json, indent=2), encoding="utf-8")
 
-        client = _load_revit_client()
-        if client is None:
+        # transaction_json is sent as a JSON string (not a nested object) — matches v1
+        response = requests.post(
+            f"{server_url}/build-model",
+            json={
+                "job_id":           job_id,
+                "transaction_json": json.dumps(transaction_json),
+            },
+            headers={"X-API-Key": api_key},
+            timeout=timeout,
+        )
+
+        if response.status_code != 200:
+            return {
+                "ok":        False,
+                "rvt_path":  None,
+                "warnings":  [],
+                "error_log": f"Revit server returned HTTP {response.status_code}: {response.text[:500]}",
+                "job_id":    job_id,
+            }
+
+        content = response.content
+        # Validate OLE Compound Document magic bytes (\xD0\xCF\x11\xE0)
+        if len(content) < 8 or content[:4] != b"\xd0\xcf\x11\xe0":
             return {
                 "ok":        False,
                 "rvt_path":  None,
                 "warnings":  [],
                 "error_log": (
-                    "RevitClient not available. "
-                    "Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set "
-                    "REVIT_CLIENT_PATH env var to the backend directory."
+                    f"Revit server returned {len(content)} bytes that do not look like "
+                    f"a valid .rvt file (got: {content[:64]!r}). "
+                    "Check that the Add-in is loaded inside Revit 2023."
                 ),
                 "job_id": job_id,
             }
 
-        rvt_path, warnings = asyncio.run(
-            client.build_model(str(tmp_json), job_id)
-        )
+        # Parse optional warnings header
+        warnings: list[str] = []
+        try:
+            raw_hdr = response.headers.get("x-revit-warnings", "[]")
+            parsed  = json.loads(raw_hdr)
+            if isinstance(parsed, list):
+                warnings = [str(w) for w in parsed]
+        except Exception:
+            pass
+
+        # Write .rvt to output directory
+        rvt_path = out_path / f"{job_id}.rvt"
+        rvt_path.write_bytes(content)
+
         return {
             "ok":        True,
-            "rvt_path":  rvt_path,
+            "rvt_path":  str(rvt_path),
             "warnings":  warnings,
             "error_log": None,
             "job_id":    job_id,
         }
 
+    except requests.exceptions.ConnectionError:
+        return {
+            "ok":        False,
+            "rvt_path":  None,
+            "warnings":  [],
+            "error_log": (
+                f"Cannot reach Revit server at {server_url}. "
+                "On Windows: run revit_server\\csharp_service\\build.bat then verify "
+                "http://localhost:5000/health returns {\"status\": \"healthy\"}."
+            ),
+            "job_id": job_id,
+        }
+    except requests.exceptions.Timeout:
+        return {
+            "ok":        False,
+            "rvt_path":  None,
+            "warnings":  [],
+            "error_log": f"Revit server timed out after {timeout}s. The model may be too complex.",
+            "job_id":    job_id,
+        }
     except Exception as exc:
         return {
             "ok":        False,
@@ -538,24 +592,6 @@ def revit_api_client(
             "error_log": f"{type(exc).__name__}: {exc}",
             "job_id":    job_id,
         }
-    finally:
-        try:
-            tmp_json.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-
-def _load_revit_client():
-    """Try to import RevitClient from v1 project on PYTHONPATH."""
-    v1_path = os.getenv("REVIT_CLIENT_PATH",
-        str(Path(__file__).parent.parent.parent / "mcc-amplify-ai"))
-    if v1_path not in sys.path:
-        sys.path.insert(0, v1_path)
-    try:
-        from backend.services.revit_client import RevitClient
-        return RevitClient()
-    except ImportError:
-        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

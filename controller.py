@@ -448,7 +448,11 @@ if __name__ == "__main__":
 
     project_context = {}
     if args.context:
-        with open(args.context, encoding="utf-8") as f:
+        ctx_path = Path(args.context)
+        if not ctx_path.is_absolute():
+            # resolve relative to project root (where controller.py lives)
+            ctx_path = Path(__file__).parent / ctx_path
+        with open(ctx_path, encoding="utf-8") as f:
             project_context = json.load(f)
 
     result = run_pipeline(

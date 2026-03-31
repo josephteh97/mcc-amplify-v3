@@ -19,5 +19,19 @@
     "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
     "action": "Escalated to controller for re-validation",
     "timestamp": "2026-03-31T15:53:24.286077"
+  },
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Medium Grid (9-16), No Columns Detected",
+    "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T17:13:05.096046"
+  },
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Medium Grid (9-16), No Columns Detected",
+    "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T17:13:06.393460"
   }
 ]

@@ -1,0 +1,9 @@
+{
+  "storey_height": 3000,
+  "bay_widths_x_mm": [7500, 7500, 8000, 7500],
+  "bay_widths_y_mm": [7500, 8000, 7500],
+  "wall_thickness_interior_mm": 200,
+  "wall_thickness_exterior_mm": 300,
+  "default_column_size_mm": 800,
+  "assumed_bay_mm": 7500
+}
