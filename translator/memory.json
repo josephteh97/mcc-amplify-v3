@@ -1,0 +1,16 @@
+[
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Simple Grid (<=8), Low Column Density (<=10), Rectangular Columns",
+    "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T15:17:38.355294"
+  },
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Simple Grid (<=8), Low Column Density (<=10), Rectangular Columns",
+    "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T15:33:28.477908"
+  }
+]

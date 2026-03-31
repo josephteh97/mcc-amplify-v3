@@ -1,0 +1,40 @@
+[
+  {
+    "agent": "ValidationAgent",
+    "feature_signature": "Simple Grid (<=8), Low Column Density (<=10), Rectangular Columns",
+    "corrections": [
+      {
+        "field": "columns[1].width_mm",
+        "original": null,
+        "corrected": 200,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[1].depth_mm",
+        "original": null,
+        "corrected": 200,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[2].shape",
+        "original": "unknown_shape",
+        "corrected": "rectangular",
+        "rule": "C1"
+      },
+      {
+        "field": "columns[2].width_mm",
+        "original": 100.0,
+        "corrected": 200,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[2].depth_mm",
+        "original": 100.0,
+        "corrected": 200,
+        "rule": "C2"
+      }
+    ],
+    "status": "failed",
+    "timestamp": "2026-03-31T15:17:22.243352"
+  }
+]
