@@ -33,5 +33,19 @@
     "error": "RevitClient not available. Add ~/Documents/mcc-amplify-ai to PYTHONPATH or set REVIT_CLIENT_PATH env var to the backend directory.",
     "action": "Escalated to controller for re-validation",
     "timestamp": "2026-03-31T17:13:06.393460"
+  },
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Medium Grid (9-16), No Columns Detected",
+    "error": "Cannot reach Revit server at http://localhost:5000. On Windows: run revit_server\\csharp_service\\build.bat then verify http://localhost:5000/health returns {\"status\": \"healthy\"}.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T17:28:22.989665"
+  },
+  {
+    "agent": "BIMTranslatorAgent",
+    "feature_signature": "Medium Grid (9-16), No Columns Detected",
+    "error": "Cannot reach Revit server at http://localhost:5000. On Windows: run revit_server\\csharp_service\\build.bat then verify http://localhost:5000/health returns {\"status\": \"healthy\"}.",
+    "action": "Escalated to controller for re-validation",
+    "timestamp": "2026-03-31T17:28:24.311439"
   }
 ]
