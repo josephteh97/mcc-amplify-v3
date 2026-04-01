@@ -1,6 +1,9 @@
 # Python
 **/__pycache__/
 **.pyc
+*.egg-info/
+.venv/
+venv/
 
 # MSBuild / .NET build output
 revit_server/RevitAddin/bin/
@@ -8,5 +11,36 @@ revit_server/RevitAddin/obj/
 revit_server/csharp_service/bin/
 revit_server/csharp_service/obj/
 
-# MSBuild cache files (covered by ** but explicit for clarity)
+# MSBuild cache files
 **.cache
+
+# Environment — contains secrets and machine-specific paths
+.env
+.env.*
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# SQLite agent memory databases (seeded at runtime via seed_memory.py)
+*.sqlite
+*.db
+
+# Runtime data — uploaded PDFs and generated Revit models
+data/uploads/
+data/models/
+
+# Runtime debug images produced by detection agents
+grid-detection-agent/*.png
+pdf_detection_agent/*debug*.png
+pdf_detection_agent/*detection*.png
+pdf_detection_agent/pdf_agent.png
+
+# Logs
+*.log
+logs/
+
+# OS noise
+.DS_Store
+Thumbs.db
