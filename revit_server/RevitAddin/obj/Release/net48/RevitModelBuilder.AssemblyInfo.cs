@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RevitModelBuilderAddin")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+437cf9cd7098babd6630a27d315289393d2828d8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ebea28b7679cbc913e96baef19fcb4f1c0884155")]
 [assembly: System.Reflection.AssemblyProductAttribute("RevitModelBuilderAddin")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RevitModelBuilderAddin")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
