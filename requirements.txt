@@ -6,3 +6,4 @@ requests
 # gltf exporter
 trimesh
 numpy
+scipy
