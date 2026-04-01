@@ -35,7 +35,6 @@ fi
 
 export WINDOWS_REVIT_SERVER="${WINDOWS_REVIT_SERVER:-http://localhost:5000}"
 export REVIT_SERVER_API_KEY="${REVIT_SERVER_API_KEY:-my-revit-key-2023}"
-export REVIT_CLIENT_PATH="${REVIT_CLIENT_PATH:-$HOME/Documents/mcc-amplify-ai}"
 
 # =============================================================================
 # MODE: --check
