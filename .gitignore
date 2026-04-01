@@ -1,6 +1,12 @@
-***.pyc
-agent.cpython-***.pyc
-agent.cpython-310.pyc
-pdf_detection_agent/__pycache__/agent.cpython-310.pyc
-pdf_detection_agent/__pycache__/agent.cpython-312.pyc
-***.cache
+# Python
+**/__pycache__/
+**.pyc
+
+# MSBuild / .NET build output
+revit_server/RevitAddin/bin/
+revit_server/RevitAddin/obj/
+revit_server/csharp_service/bin/
+revit_server/csharp_service/obj/
+
+# MSBuild cache files (covered by ** but explicit for clarity)
+**.cache
