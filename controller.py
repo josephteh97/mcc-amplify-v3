@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from validation.agent  import ValidationAgent
 from translator.agent  import BIMTranslatorAgent
+import gltf_exporter
 
 # Detection agents (existing — imported without modification)
 _GRID_AGENT_DIR   = Path(__file__).parent / "grid-detection-agent"
@@ -380,6 +381,16 @@ def run_pipeline(
     warnings  = translator_result.get("warnings", [])
     error_log = translator_result.get("error_log")
 
+    # ── glTF export — always attempted when translation produced geometry ──────
+    gltf_path = None
+    tx_geometry = translator_result.get("transaction_json", {})
+    if tx_geometry:
+        try:
+            gltf_out = Path(__file__).parent / "data" / "models" / "gltf" / f"{job_id}.glb"
+            gltf_path = gltf_exporter.export(tx_geometry, str(gltf_out))
+        except Exception as exc:
+            print(f"  [controller] glTF export skipped: {exc}")
+
     _banner("PIPELINE COMPLETE" if success else "PIPELINE FAILED")
     print(
         f"  Status:    {'SUCCESS' if success else 'FAILED'}\n"
@@ -395,6 +406,7 @@ def run_pipeline(
         "stage_reached":     "complete" if success else "translation",
         "validation_status": val_status,
         "rvt_path":          rvt_path,
+        "gltf_path":         gltf_path,
         "warnings":          warnings,
         "error_log":         error_log,
         "refinement_request": translator_result.get("refinement_request"),

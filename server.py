@@ -135,7 +135,8 @@ def _run_pipeline_bg(job_id: str, pdf_path: str, ctx: dict) -> None:
         )
         _prog(90, "Finalising…")
 
-        rvt_path = result.get("rvt_path")
+        rvt_path  = result.get("rvt_path")
+        gltf_path = result.get("gltf_path")
         _jobs[job_id].update({
             "status":   "completed" if result.get("ok") else "failed",
             "progress": 100 if result.get("ok") else -1,
@@ -145,7 +146,7 @@ def _run_pipeline_bg(job_id: str, pdf_path: str, ctx: dict) -> None:
                 "ok":      result.get("ok"),
                 "files": {
                     "rvt":  rvt_path,
-                    "gltf": None,
+                    "gltf": gltf_path,
                 },
                 "stats": {
                     "grids":   result.get("element_counts", {}).get("grids", 0),
@@ -183,21 +184,25 @@ def get_status(job_id: str):
 # Downloads
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/api/download/rvt/{job_id}")
-def download_rvt(job_id: str):
+def _serve_job_file(job_id: str, file_key: str, extension: str, media_type: str):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found.")
-    rvt_path = job.get("result", {}) and job["result"].get("files", {}).get("rvt")
-    if not rvt_path or not Path(rvt_path).exists():
-        raise HTTPException(404, "RVT file not yet available.")
-    filename = Path(job.get("filename", "model.pdf")).stem + ".rvt"
-    return FileResponse(rvt_path, media_type="application/octet-stream", filename=filename)
+    path = (job.get("result") or {}).get("files", {}).get(file_key)
+    if not path or not Path(path).exists():
+        raise HTTPException(404, f"{extension.upper()} file not yet available.")
+    filename = Path(job.get("filename", "model.pdf")).stem + f".{extension}"
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@app.get("/api/download/rvt/{job_id}")
+def download_rvt(job_id: str):
+    return _serve_job_file(job_id, "rvt", "rvt", "application/octet-stream")
 
 
 @app.get("/api/download/gltf/{job_id}")
 def download_gltf(job_id: str):
-    raise HTTPException(404, "glTF export not available in v2 pipeline.")
+    return _serve_job_file(job_id, "gltf", "glb", "model/gltf-binary")
 
 
 # ── Stub endpoints so the frontend doesn't spam 404s ─────────────────────────

@@ -1,5 +1,8 @@
 # grid-detection-agent
-pdf2image
+pdf2image==1.17.0
 Pillow
 requests
-pdf2image==1.17.0
+
+# gltf exporter
+trimesh
+numpy
