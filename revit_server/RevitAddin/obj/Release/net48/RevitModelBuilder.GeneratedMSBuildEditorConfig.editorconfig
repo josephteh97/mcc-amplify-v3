@@ -1,0 +1,5 @@
+is_global = true
+build_property.RootNamespace = RevitModelBuilderAddin
+build_property.ProjectDir = C:\MyDocuments\mcc-amplify-v2\revit_server\RevitAddin\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
