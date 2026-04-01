@@ -18,8 +18,17 @@ TIMEOUT      = 300 # seconds — vision inference on a floor plan can take a whi
 
 # ── STARTUP CHECK ────────────────────────────────────────────────────────────
 
+_model_verified = False
+
+
 def _verify_model():
-    """Raise RuntimeError if the SEA-LION model tag is not present in ollama list."""
+    """Raise RuntimeError if the SEA-LION model tag is not present in ollama list.
+    Only checks once per process lifetime — subsequent calls are no-ops.
+    Called lazily on first query so import failures surface with context.
+    """
+    global _model_verified
+    if _model_verified:
+        return
     try:
         resp = requests.get(f"{BASE_URL}/api/tags", timeout=10)
         resp.raise_for_status()
@@ -34,9 +43,7 @@ def _verify_model():
             f"Cannot connect to Ollama at {BASE_URL}. "
             "Make sure Ollama is running: ollama serve"
         )
-
-
-_verify_model()
+    _model_verified = True
 
 
 # ── INTERNAL HELPERS ─────────────────────────────────────────────────────────
@@ -67,7 +74,7 @@ def _chat(payload: dict) -> str:
 
 
 def _query(prompt: str, image_path: str = None) -> str:
-    """Build and send a chat payload, optionally with an image."""
+    _verify_model()
     message = {"role": "user", "content": prompt}
     if image_path is not None:
         with open(image_path, "rb") as f:

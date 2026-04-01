@@ -538,7 +538,7 @@ def revit_api_client(
                         "Open Revit 2023 on the Windows machine and wait for the add-in to load, "
                         "then retry."
                     )
-            except Exception:
+            except (json.JSONDecodeError, ValueError):
                 pass
             return _err(job_id,
                 f"Revit server returned {len(content)} bytes that do not look like "
