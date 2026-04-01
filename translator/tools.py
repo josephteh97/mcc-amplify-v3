@@ -470,6 +470,14 @@ def _build_slabs(rooms: list, ctx: dict, slab_type: str) -> list:
 # TOOL 3 — revit_api_client
 # ══════════════════════════════════════════════════════════════════════════════
 
+# OLE Compound Document header — all valid .rvt files start with these 4 bytes
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0"
+
+
+def _err(job_id: str, msg: str) -> dict:
+    return {"ok": False, "rvt_path": None, "warnings": [], "error_log": msg, "job_id": job_id}
+
+
 def revit_api_client(
     transaction_json: dict,
     job_id: str | None = None,
@@ -505,8 +513,6 @@ def revit_api_client(
     out_path   = Path(output_dir)
 
     try:
-        out_path.mkdir(parents=True, exist_ok=True)
-
         # transaction_json is sent as a JSON string (not a nested object) — matches v1
         response = requests.post(
             f"{server_url}/build-model",
@@ -519,28 +525,26 @@ def revit_api_client(
         )
 
         if response.status_code != 200:
-            return {
-                "ok":        False,
-                "rvt_path":  None,
-                "warnings":  [],
-                "error_log": f"Revit server returned HTTP {response.status_code}: {response.text[:500]}",
-                "job_id":    job_id,
-            }
+            return _err(job_id, f"Revit server returned HTTP {response.status_code}: {response.text[:500]}")
 
         content = response.content
-        # Validate OLE Compound Document magic bytes (\xD0\xCF\x11\xE0)
-        if len(content) < 8 or content[:4] != b"\xd0\xcf\x11\xe0":
-            return {
-                "ok":        False,
-                "rvt_path":  None,
-                "warnings":  [],
-                "error_log": (
-                    f"Revit server returned {len(content)} bytes that do not look like "
-                    f"a valid .rvt file (got: {content[:64]!r}). "
-                    "Check that the Add-in is loaded inside Revit 2023."
-                ),
-                "job_id": job_id,
-            }
+        if len(content) < 8 or content[:4] != _OLE_MAGIC:
+            # Detect the common "service running but add-in not loaded" case
+            try:
+                body = json.loads(content)
+                if isinstance(body, dict) and body.get("status", "").upper() in ("OK", "HEALTHY"):
+                    return _err(job_id,
+                        "Revit service is reachable but the Add-in is not initialised. "
+                        "Open Revit 2023 on the Windows machine and wait for the add-in to load, "
+                        "then retry."
+                    )
+            except Exception:
+                pass
+            return _err(job_id,
+                f"Revit server returned {len(content)} bytes that do not look like "
+                f"a valid .rvt file (got: {content[:64]!r}). "
+                "Check that the Add-in is loaded inside Revit 2023."
+            )
 
         # Parse optional warnings header
         warnings: list[str] = []
@@ -552,7 +556,8 @@ def revit_api_client(
         except Exception:
             pass
 
-        # Write .rvt to output directory
+        # Write .rvt to output directory (mkdir only on success path)
+        out_path.mkdir(parents=True, exist_ok=True)
         rvt_path = out_path / f"{job_id}.rvt"
         rvt_path.write_bytes(content)
 
@@ -565,33 +570,15 @@ def revit_api_client(
         }
 
     except requests.exceptions.ConnectionError:
-        return {
-            "ok":        False,
-            "rvt_path":  None,
-            "warnings":  [],
-            "error_log": (
-                f"Cannot reach Revit server at {server_url}. "
-                "On Windows: run revit_server\\csharp_service\\build.bat then verify "
-                "http://localhost:5000/health returns {\"status\": \"healthy\"}."
-            ),
-            "job_id": job_id,
-        }
+        return _err(job_id,
+            f"Cannot reach Revit server at {server_url}. "
+            "On Windows: run revit_server\\csharp_service\\build.bat then verify "
+            "http://localhost:5000/health returns {\"status\": \"healthy\"}."
+        )
     except requests.exceptions.Timeout:
-        return {
-            "ok":        False,
-            "rvt_path":  None,
-            "warnings":  [],
-            "error_log": f"Revit server timed out after {timeout}s. The model may be too complex.",
-            "job_id":    job_id,
-        }
+        return _err(job_id, f"Revit server timed out after {timeout}s. The model may be too complex.")
     except Exception as exc:
-        return {
-            "ok":        False,
-            "rvt_path":  None,
-            "warnings":  [],
-            "error_log": f"{type(exc).__name__}: {exc}",
-            "job_id":    job_id,
-        }
+        return _err(job_id, f"{type(exc).__name__}: {exc}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

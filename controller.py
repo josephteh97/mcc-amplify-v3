@@ -23,6 +23,7 @@ Usage (Python):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -70,10 +71,19 @@ def _run_column_detection(pdf_path: str, page_num: int = 0) -> dict:
     if not _COLUMN_AGENT_DIR.exists():
         print(f"  [controller] pdf_detection_agent not found at {_COLUMN_AGENT_DIR}")
         return {}
+    # Use a unique module label so it never collides with the grid agent's
+    # 'agent' entry in sys.modules (both run in the same process).
+    # Must also register in sys.modules before exec_module so @dataclass
+    # decorators can resolve cls.__module__ via sys.modules lookup.
+    label      = "col_agent"
+    agent_path = _COLUMN_AGENT_DIR / "agent.py"
     sys.path.insert(0, str(_COLUMN_AGENT_DIR))
     try:
-        import agent as col_agent_module
-        result = col_agent_module.detect_file(pdf_path, page_num=page_num)
+        spec = importlib.util.spec_from_file_location(label, agent_path)
+        mod  = importlib.util.module_from_spec(spec)
+        sys.modules[label] = mod          # register before exec so @dataclass works
+        spec.loader.exec_module(mod)
+        result = mod.detect_file(pdf_path, page_num=page_num)
         print(
             f"  [controller] Columns: {result.get('total_columns', 0)} on page {page_num}"
         )
@@ -82,7 +92,9 @@ def _run_column_detection(pdf_path: str, page_num: int = 0) -> dict:
         print(f"  [controller] Column detection failed: {exc}")
         return {}
     finally:
-        sys.path.remove(str(_COLUMN_AGENT_DIR))
+        sys.modules.pop(label, None)
+        if str(_COLUMN_AGENT_DIR) in sys.path:
+            sys.path.remove(str(_COLUMN_AGENT_DIR))
 
 
 # ══════════════════════════════════════════════════════════════════════════════

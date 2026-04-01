@@ -141,21 +141,159 @@ setup() {
 }
 
 # =============================================================================
-# MODE: --frontend
+# MODE: --frontend  — start backend API + Vite together
 # =============================================================================
 start_frontend() {
-    banner "Starting Frontend"
+    banner "Starting MCC-Amplify-v2 Web App"
     FRONTEND_DIR="$ROOT/frontend"
+
     if [[ ! -d "$FRONTEND_DIR" ]]; then
         err "frontend/ directory not found at $FRONTEND_DIR"; exit 1
     fi
     if [[ ! -f "$FRONTEND_DIR/package.json" ]]; then
-        err "package.json not found — frontend may not be installed"; exit 1
+        err "package.json not found — run: ./script/run.sh --setup"; exit 1
     fi
-    info "Installing npm packages ..."
-    cd "$FRONTEND_DIR" && npm install --silent
-    ok "Starting Vite dev server ..."
-    exec npm run dev
+
+    # Friendly goodbye on Ctrl+C
+    cleanup() {
+        echo ""
+        echo -e "  ${CYAN}Goodbye! Amplify v2 stopped.${RESET}"
+        [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null
+        [[ -n "${VITE_PID:-}"    ]] && kill "$VITE_PID"    2>/dev/null
+        wait 2>/dev/null
+        exit 0
+    }
+    trap cleanup SIGINT SIGTERM
+
+    # ── 1. Start FastAPI backend ──────────────────────────────────────────────
+    # Free port 8000 if a previous run left a process behind
+    OLD_PID=$(lsof -ti tcp:8000 2>/dev/null) || true
+    if [[ -n "$OLD_PID" ]]; then
+        info "Freeing port 8000 (old process $OLD_PID)…"
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
+    info "Starting API backend  →  http://localhost:8000"
+    cd "$ROOT"
+    python3 server.py &
+    BACKEND_PID=$!
+
+    # Wait up to 10 s for backend to be ready
+    for i in $(seq 1 10); do
+        sleep 1
+        if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+            ok "Backend API:        http://localhost:8000"
+            break
+        fi
+    done
+
+    # ── 2. System status table ────────────────────────────────────────────────
+    echo ""
+    echo -e "  ${BOLD}System Status${RESET}"
+    printf "  %-26s %s\n" "─────────────────────────" "──────────────────────────────────"
+
+    # Python
+    PY_VER=$(python3 --version 2>&1)
+    printf "  ${GREEN}%-26s${RESET} %s\n" "Python" "$PY_VER"
+
+    # Ollama + models
+    if command -v ollama &>/dev/null; then
+        OLLAMA_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}' | tr '\n' '  ')
+        printf "  ${GREEN}%-26s${RESET} %s\n" "Ollama" "${OLLAMA_MODELS:-no models loaded}"
+        if ollama list 2>/dev/null | grep -qi "sea-lion\|SEA-LION\|Gemma-SEA"; then
+            printf "  ${GREEN}%-26s${RESET} %s\n" "SEA-LION vision model" "ready"
+        else
+            printf "  ${YELLOW}%-26s${RESET} %s\n" "SEA-LION vision model" "not found — run: ollama pull aisingapore/Gemma-SEA-LION-v4-4B-VL:latest"
+        fi
+    else
+        printf "  ${YELLOW}%-26s${RESET} %s\n" "Ollama" "not found — detection agents will fail"
+    fi
+
+    # Grid detection agent
+    if [[ -f "$ROOT/grid-detection-agent/agent.py" ]]; then
+        printf "  ${GREEN}%-26s${RESET} %s\n" "Grid detection agent" "ready"
+    else
+        printf "  ${YELLOW}%-26s${RESET} %s\n" "Grid detection agent" "missing"
+    fi
+
+    # Column detection agent
+    if [[ -f "$ROOT/pdf_detection_agent/agent.py" ]]; then
+        printf "  ${GREEN}%-26s${RESET} %s\n" "Column detection agent" "ready"
+    else
+        printf "  ${YELLOW}%-26s${RESET} %s\n" "Column detection agent" "missing"
+    fi
+
+    # Revit server — || true prevents set -e from killing the script on curl failure
+    REVIT_BODY=$(curl -sf --max-time 3 \
+        -H "X-API-Key: ${REVIT_SERVER_API_KEY}" \
+        "${WINDOWS_REVIT_SERVER}/health" 2>/dev/null) || true
+    if [[ -n "$REVIT_BODY" ]]; then
+        REV_DETAIL=$(echo "$REVIT_BODY" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    init=d.get('revit_initialized',False)
+    status=d.get('status','ok')
+    print(f'{status}  (revit_initialized={init})')
+except:
+    print('connected')
+" 2>/dev/null || echo "connected")
+        printf "  ${GREEN}%-26s${RESET} %s  [%s]\n" "Revit server" "$REV_DETAIL" "$WINDOWS_REVIT_SERVER"
+    else
+        printf "  ${YELLOW}%-26s${RESET} %s\n" "Revit server" "offline — start Revit on Windows then run build.bat"
+    fi
+
+    # Memory databases
+    VAL_ROWS=$(python3 -c "
+import sqlite3,pathlib
+db=pathlib.Path('$ROOT/validation/memory.sqlite')
+if db.exists():
+    c=sqlite3.connect(db).execute('SELECT COUNT(*) FROM conflict_resolutions').fetchone()
+    print(f'{c[0]} rules seeded')
+else:
+    print('not found')
+" 2>/dev/null || echo "unknown")
+    printf "  ${GREEN}%-26s${RESET} %s\n" "Validation memory" "$VAL_ROWS"
+
+    TR_ROWS=$(python3 -c "
+import sqlite3,pathlib
+db=pathlib.Path('$ROOT/translator/memory.sqlite')
+if db.exists():
+    c=sqlite3.connect(db).execute('SELECT COUNT(*) FROM api_success_patterns').fetchone()
+    print(f'{c[0]} patterns seeded')
+else:
+    print('not found')
+" 2>/dev/null || echo "unknown")
+    printf "  ${GREEN}%-26s${RESET} %s\n" "Translator memory" "$TR_ROWS"
+
+    printf "  %-26s %s\n" "─────────────────────────" "──────────────────────────────────"
+    echo ""
+
+    # ── 3. Install npm deps if needed ────────────────────────────────────────
+    if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
+        info "Installing npm packages (first run)…"
+        cd "$FRONTEND_DIR" && npm install --silent
+    fi
+
+    # ── 4. Start Vite ────────────────────────────────────────────────────────
+    OLD_VITE=$(lsof -ti tcp:5173 2>/dev/null) || true
+    if [[ -n "$OLD_VITE" ]]; then
+        info "Freeing port 5173 (old process $OLD_VITE)…"
+        kill "$OLD_VITE" 2>/dev/null || true
+        sleep 1
+    fi
+    info "Starting frontend     →  http://localhost:5173"
+    cd "$FRONTEND_DIR" && npm run dev &
+    VITE_PID=$!
+    sleep 2   # give Vite a moment to print its own banner
+
+    echo ""
+    echo -e "  ${BOLD}${GREEN}Amplify v2 is ready — open your browser${RESET}"
+    echo -e "  ${GREEN}  http://localhost:5173${RESET}"
+    echo -e "  Press Ctrl+C to stop."
+    echo ""
+
+    wait "$BACKEND_PID" "$VITE_PID"
 }
 
 # =============================================================================
@@ -187,20 +325,8 @@ run_pipeline() {
 # Entry point
 # =============================================================================
 if [[ $# -eq 0 ]]; then
-    echo ""
-    echo -e "${BOLD}MCC-Amplify-v2 Pipeline Runner${RESET}"
-    echo ""
-    echo "  Usage:"
-    echo "    ./script/run.sh <floor_plan.pdf> [--page 0] [--context ctx.json] [--verbose]"
-    echo "    ./script/run.sh --setup      Install deps + seed memory (first run)"
-    echo "    ./script/run.sh --check      Verify all dependencies"
-    echo "    ./script/run.sh --frontend   Start web UI at http://localhost:5173"
-    echo ""
-    echo "  Environment (.env or export):"
-    echo "    WINDOWS_REVIT_SERVER   $WINDOWS_REVIT_SERVER"
-    echo "    REVIT_SERVER_API_KEY   $REVIT_SERVER_API_KEY"
-    echo "    REVIT_CLIENT_PATH      $REVIT_CLIENT_PATH"
-    echo ""
+    # No args → launch the web app (most common case)
+    start_frontend
     exit 0
 fi
 

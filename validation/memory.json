@@ -36,5 +36,85 @@
     ],
     "status": "failed",
     "timestamp": "2026-03-31T15:17:22.243352"
+  },
+  {
+    "agent": "ValidationAgent",
+    "feature_signature": "Medium Grid (9-16), Low Column Density (\u226410)",
+    "corrections": [
+      {
+        "field": "columns[0].width_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[0].depth_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      }
+    ],
+    "status": "warnings",
+    "timestamp": "2026-04-01T11:35:40.913250"
+  },
+  {
+    "agent": "ValidationAgent",
+    "feature_signature": "Medium Grid (9-16), Low Column Density (\u226410)",
+    "corrections": [
+      {
+        "field": "columns[0].width_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[0].depth_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      }
+    ],
+    "status": "warnings",
+    "timestamp": "2026-04-01T11:35:42.770108"
+  },
+  {
+    "agent": "ValidationAgent",
+    "feature_signature": "Medium Grid (9-16), Low Column Density (\u226410)",
+    "corrections": [
+      {
+        "field": "columns[0].width_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[0].depth_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      }
+    ],
+    "status": "warnings",
+    "timestamp": "2026-04-01T12:05:09.959341"
+  },
+  {
+    "agent": "ValidationAgent",
+    "feature_signature": "Medium Grid (9-16), Low Column Density (\u226410)",
+    "corrections": [
+      {
+        "field": "columns[0].width_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      },
+      {
+        "field": "columns[0].depth_mm",
+        "original": null,
+        "corrected": 800,
+        "rule": "C2"
+      }
+    ],
+    "status": "warnings",
+    "timestamp": "2026-04-01T12:05:12.331407"
   }
 ]

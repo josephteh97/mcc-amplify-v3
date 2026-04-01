@@ -12,7 +12,8 @@ import requests
 BASE_URL = "http://localhost:11434"
 MODEL = "aisingapore/Gemma-SEA-LION-v4-4B-VL:latest"
 MAX_RETRIES = 3
-BACKOFF_BASE = 2  # seconds
+BACKOFF_BASE = 2   # seconds
+TIMEOUT      = 300 # seconds — vision inference on a floor plan can take a while
 
 
 # ── STARTUP CHECK ────────────────────────────────────────────────────────────
@@ -47,20 +48,17 @@ def _chat(payload: dict) -> str:
             resp = requests.post(
                 f"{BASE_URL}/api/chat",
                 json=payload,
-                timeout=120,
+                timeout=TIMEOUT,
             )
-            resp.raise_for_status()
+            if not resp.ok:
+                detail = resp.text[:300] if resp.text else "(no body)"
+                raise requests.exceptions.HTTPError(
+                    f"HTTP {resp.status_code} from Ollama: {detail}", response=resp
+                )
 
-            # Ollama streams NDJSON; accumulate chunks then join once
-            chunks = []
-            for line in resp.text.strip().splitlines():
-                if not line:
-                    continue
-                chunk = json.loads(line)
-                chunks.append(chunk.get("message", {}).get("content", ""))
-                if chunk.get("done", False):
-                    break
-            return "".join(chunks).strip()
+            # stream=False → single JSON object
+            data = resp.json()
+            return data.get("message", {}).get("content", "").strip()
 
         except (requests.exceptions.RequestException, json.JSONDecodeError) as exc:
             if attempt == MAX_RETRIES - 1:
@@ -74,7 +72,7 @@ def _query(prompt: str, image_path: str = None) -> str:
     if image_path is not None:
         with open(image_path, "rb") as f:
             message["images"] = [base64.b64encode(f.read()).decode("utf-8")]
-    return _chat({"model": MODEL, "messages": [message], "stream": True})
+    return _chat({"model": MODEL, "messages": [message], "stream": False})
 
 
 # ── PUBLIC API ────────────────────────────────────────────────────────────────
