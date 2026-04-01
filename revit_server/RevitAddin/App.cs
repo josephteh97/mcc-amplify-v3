@@ -222,14 +222,34 @@ namespace RevitModelBuilderAddin
 
         // ── TCP accept loop ────────────────────────────────────────────────────
 
+        private static void LogError(string message)
+        {
+            const string LOG = @"C:\RevitOutput\tcp_server_errors.log";
+            try
+            {
+                Directory.CreateDirectory(@"C:\RevitOutput");
+                File.AppendAllText(LOG, $"[{DateTime.Now:HH:mm:ss.fff}] {message}\r\n");
+                Console.WriteLine($"[RevitModelBuilderAddin] {message}");
+            }
+            catch { }
+        }
+
         private async void ListenLoop(CancellationToken ct)
         {
             while (!ct.IsCancellationRequested)
             {
-                TcpClient client;
-                try   { client = await _tcpListener.AcceptTcpClientAsync(); }
-                catch { break; }
-                _ = Task.Run(() => HandleClient(client));
+                try
+                {
+                    TcpClient client = await _tcpListener.AcceptTcpClientAsync();
+                    _ = Task.Run(() => HandleClient(client));
+                }
+                catch (ObjectDisposedException)  { break; }   // normal shutdown
+                catch (OperationCanceledException) { break; } // normal shutdown
+                catch (Exception ex)
+                {
+                    LogError($"ListenLoop CRITICAL: {ex.GetType().Name}: {ex.Message}\r\n{ex.StackTrace}");
+                    await Task.Delay(1000, ct).ConfigureAwait(false); // back off, then retry
+                }
             }
         }
 
@@ -278,7 +298,13 @@ namespace RevitModelBuilderAddin
 
                     if (method == "GET" && path == "/health")
                     {
-                        WriteText(stream, 200, "Revit Model Builder ready");
+                        WriteJson(stream, 200, new {
+                            status             = "healthy",
+                            service            = "Revit API Service",
+                            revit_initialized  = true,
+                            timestamp          = DateTime.UtcNow.ToString("O"),
+                            uptime_seconds     = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds
+                        });
                     }
                     else if (method == "POST" && path == "/build-model")
                     {
@@ -323,8 +349,16 @@ namespace RevitModelBuilderAddin
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[RevitModelBuilderAddin] Client error: {ex.Message}");
-                    try { if (stream != null) WriteText(stream, 500, ex.Message); } catch { }
+                    LogError($"HandleClient {ex.GetType().Name}: {ex.Message}\r\n{ex.StackTrace}");
+                    try
+                    {
+                        if (stream != null && stream.CanWrite)
+                            WriteJson(stream, 500, new { error = ex.Message });
+                    }
+                    catch (Exception writeEx)
+                    {
+                        LogError($"HandleClient failed to send error response: {writeEx.Message}");
+                    }
                 }
             }
         }
