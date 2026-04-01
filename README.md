@@ -88,7 +88,7 @@ flowchart TD
         Floors / Ceilings"]
         RAC["revit_api_client
         ──────────────────────
-        POST localhost:5000/build-model
+        POST $WINDOWS_REVIT_SERVER/build-model
         Captures C# warnings
         Self-correction ×3"]
         TM[("translator/
@@ -108,18 +108,18 @@ flowchart TD
     context injected"]
 
     REVIT["**Revit Add-in**
-    Windows · localhost:5000
+    Windows · $WINDOWS_REVIT_SERVER
     ────────────────────────
-    RevitService.exe
-    ModelBuilder.cs
+    RevitModelBuilderAddin.dll
+    App.cs · ModelBuilder.cs
     Creates Levels, Grids,
     Walls, Columns, Doors,
     Windows, Floors"]
 
     RVT(["`**Output**
     data/models/rvt/*.rvt`"])
-    HALT(["Abort
-    Re-detect at higher DPI"])
+    HALT(["Pipeline Abort
+    Returns error_log to caller"])
 
     PDF --> DETECT
     GA & CA --> PARSE
