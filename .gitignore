@@ -27,6 +27,9 @@ frontend/.vite/
 *.sqlite
 *.db
 
+# Agent memory JSON logs (written at runtime by each agent)
+**/memory.json
+
 # Runtime data — uploaded PDFs and generated Revit models
 data/uploads/
 data/models/
