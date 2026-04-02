@@ -44,7 +44,7 @@ import gltf_exporter
 # Detection agents
 _GRID_AGENT_DIR = _ROOT / "grid-detection-agent"
 
-# YOLO column agent (replaces pdf_detection_agent Ollama-vision approach)
+# YOLO column agent
 from yolo_detection_agents.column_agent import YOLOColumnAgent as _YOLOColumnAgent
 _YOLO_AGENT = _YOLOColumnAgent()  # singleton — model loads once on first detect() call
 

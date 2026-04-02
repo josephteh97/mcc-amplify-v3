@@ -91,8 +91,8 @@ class BaseYOLOAgent(ABC):
     def __init__(
         self,
         weights_path: str | Path,
-        conf_threshold: float = 0.35,
-        render_dpi: int = 150,
+        conf_threshold: float = 0.25,
+        render_dpi: int = 300,
     ) -> None:
         self._weights_path   = Path(weights_path)
         self._conf_threshold = conf_threshold
@@ -222,23 +222,74 @@ class BaseYOLOAgent(ABC):
 
     def _run_inference(self, img: Image.Image) -> list[dict]:
         """
-        Run YOLO on the (optionally enhanced) image.
+        Tiled sliding-window inference.
 
-        Returns a list of raw dicts:
-            {"type": str, "bbox": [x1, y1, x2, y2], "confidence": float}
-        All bbox coordinates are in full-image pixel space.
+        Whole-image inference fails on large floor plans: a 300 DPI render of an
+        A1 sheet at 1:400 scale is ~4600×3200 px; YOLO rescales to imgsz=1280,
+        shrinking an 800 mm column from ~24 px to ~6 px — below detection threshold.
+
+        Tiling at 1280×1280 (scale=1.0×) keeps columns at ~24 px, matching
+        the training resolution. torchvision NMS merges cross-tile duplicates.
+
+        Returns raw dicts: {"type": str, "bbox": [x1,y1,x2,y2], "confidence": float}
+        All coordinates are in full-image pixel space.
         """
-        enhanced = self._enhance(img)
-        results  = self._model(enhanced, verbose=False, conf=self._conf_threshold)
-        detections: list[dict] = []
-        for r in results:
-            for box in r.boxes:
-                detections.append({
-                    "type":       r.names[int(box.cls)],
-                    "bbox":       box.xyxy[0].tolist(),
-                    "confidence": float(box.conf),
-                })
-        return detections
+        try:
+            import torch
+            from torchvision.ops import nms as _torch_nms
+        except ImportError as exc:
+            raise ImportError(
+                "torchvision is required. Run: pip install torchvision"
+            ) from exc
+
+        _TILE_SIZE    = 1280
+        _TILE_OVERLAP = 200
+        _NMS_IOU      = 0.45
+
+        W, H  = img.size
+        step  = _TILE_SIZE - _TILE_OVERLAP
+        boxes_all: list[list[float]] = []
+        confs_all: list[float]       = []
+        types_all: list[str]         = []
+
+        for y0 in range(0, H, step):
+            for x0 in range(0, W, step):
+                x1 = min(x0 + _TILE_SIZE, W);  xa = x1 - _TILE_SIZE
+                y1 = min(y0 + _TILE_SIZE, H);  ya = y1 - _TILE_SIZE
+                tile    = img.crop((xa, ya, x1, y1))
+                results = self._model.predict(
+                    source=tile, imgsz=_TILE_SIZE,
+                    conf=self._conf_threshold, iou=_NMS_IOU,
+                    verbose=False,
+                )[0]
+                for box, c, cls in zip(
+                    results.boxes.xyxy.cpu().numpy(),
+                    results.boxes.conf.cpu().numpy(),
+                    results.boxes.cls.cpu().numpy(),
+                ):
+                    boxes_all.append([box[0]+xa, box[1]+ya, box[2]+xa, box[3]+ya])
+                    confs_all.append(float(c))
+                    types_all.append(results.names[int(cls)])
+
+        if not boxes_all:
+            return []
+
+        b    = np.array(boxes_all, dtype=np.float32)
+        c    = np.array(confs_all, dtype=np.float32)
+        keep = _torch_nms(
+            torch.from_numpy(b),
+            torch.from_numpy(c),
+            iou_threshold=_NMS_IOU,
+        ).numpy()
+
+        return [
+            {
+                "type":       types_all[i],
+                "bbox":       b[i].tolist(),
+                "confidence": float(c[i]),
+            }
+            for i in keep
+        ]
 
     # ── NMS utility (available to subclasses) ─────────────────────────────────
 

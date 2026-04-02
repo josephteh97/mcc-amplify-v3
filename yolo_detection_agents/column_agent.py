@@ -2,18 +2,10 @@
 column_agent.py — YOLOv11 column detection agent for mcc-amplify-v3.
 
 Uses column-detect.pt (trained on MCC structural floor plans) to detect
-structural columns and replaces the Ollama-vision-based pdf_detection_agent.
+structural columns.
 
-Model weights location (copy from Linux before first use):
+Model weights:
     yolo_detection_agents/weights/column-detect.pt
-
-    Linux source:
-        ~/Document/generate-yolo-training-datasest-columns/column-detect.pt
-
-Human feedback compatibility:
-    The detection memory (detections.db + memory.json) schema is preserved
-    from the old pdf_detection_agent so that feedback_app.py continues to work
-    without modification.
 
 Usage:
     from yolo_detection_agents.column_agent import YOLOColumnAgent
@@ -35,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from .base_yolo_agent import BaseYOLOAgent
@@ -43,33 +36,27 @@ from .base_yolo_agent import BaseYOLOAgent
 # ── Default weights path (relative to this file's directory) ──────────────────
 _WEIGHTS_DEFAULT = Path(__file__).parent / "weights" / "column-detect.pt"
 
-# ── Memory paths (same directory as old pdf_detection_agent to keep parity) ───
-_LEGACY_AGENT_DIR = Path(__file__).parent.parent / "pdf_detection_agent"
-DB_PATH           = _LEGACY_AGENT_DIR / "detections.db"
-MEMORY_JSON_PATH  = _LEGACY_AGENT_DIR / "memory.json"
+_AGENT_DIR       = Path(__file__).parent
+DB_PATH          = _AGENT_DIR / "detections.db"
+MEMORY_JSON_PATH = _AGENT_DIR / "memory.json"
 
 
 # ── YOLO class name → canonical shape mapping ─────────────────────────────────
 # Adjust if column-detect.pt uses different class names.
 # Unknown classes are kept as detections with shape="unknown".
 _CLASS_TO_SHAPE: dict[str, str] = {
-    "column":           "square",
-    "column_square":    "square",
-    "column_rect":      "rectangle",
-    "column_rectangle": "rectangle",
-    "column_round":     "round",
-    "column_circular":  "round",
-    "column_i":         "i_beam",
-    "column_i_beam":    "i_beam",
-    # ducts / other elements from training set — skip these
-    "duct":             "_skip",
-    "duct_round":       "_skip",
-    "duct_square":      "_skip",
+    "column": "square",  # shape/type resolved downstream by OCR
 }
 
 # Aspect-ratio fallback when class name doesn't encode shape
 _ROUND_RATIO_MAX  = 0.15   # |w-h|/(w+h) below this → round
 _RECT_RATIO_MIN   = 0.25   # |w-h|/(w+h) above this → rectangle
+
+# Post-inference filters (calibrated from inspect_detections.ipynb at 300 DPI, 1:400 scale)
+_FINAL_CONF      = 0.90   # keep only high-confidence detections after tiling
+_MIN_SQUARENESS  = 0.70   # min(w,h)/max(w,h) — rejects lift shafts & elongated FPs
+_MIN_SIDE_PX     = 12     # px — rejects sub-pixel noise
+_MAX_SIDE_PX     = 65     # px — rejects large non-column objects
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -91,8 +78,8 @@ class YOLOColumnAgent(BaseYOLOAgent):
     def __init__(
         self,
         weights_path: str | Path | None = None,
-        conf_threshold: float = 0.35,
-        render_dpi: int = 150,
+        conf_threshold: float = 0.25,
+        render_dpi: int = 300,
         save_to_memory: bool = True,
     ) -> None:
         super().__init__(
@@ -126,29 +113,50 @@ class YOLOColumnAgent(BaseYOLOAgent):
         img_h: int,
     ) -> list[dict]:
         """
-        Convert raw YOLO boxes to canonical column dicts, then run NMS.
+        Convert raw YOLO boxes to canonical column dicts.
 
-        Skips non-column classes (ducts etc.).
-        Infers shape from class name or bbox aspect ratio as fallback.
+        Filters applied in order (matching inspect_detections.ipynb):
+          1. Class filter  — skip ducts and non-column classes
+          2. Size filter   — 12 ≤ side ≤ 65 px  (300 DPI, 1:400 scale)
+          3. Squareness    — min/max side ≥ 0.70  (rejects lift shafts)
+          4. Confidence    — ≥ 0.90 final threshold
+          5. Spatial grid  — 5th–95th percentile + 15% margin  (removes
+                             title-block / legend false positives)
+
+        NMS is already done by torchvision inside _run_inference — not repeated here.
         """
-        canonical: list[dict] = []
+        candidates: list[dict] = []
+
         for raw in raw_detections:
             class_name = raw["type"].lower()
             shape = _CLASS_TO_SHAPE.get(class_name)
 
             if shape is None:
-                # Unknown class: keep only if it looks like a column keyword
                 if "col" in class_name:
                     shape = _infer_shape_from_bbox(raw["bbox"])
                 else:
-                    continue  # skip non-column classes
-
+                    continue
             if shape == "_skip":
                 continue
 
-            bbox = raw["bbox"]   # [x1, y1, x2, y2] in pixels
-            canonical.append({
-                "bbox_page":   bbox,
+            x1, y1, x2, y2 = raw["bbox"]
+            w, h = x2 - x1, y2 - y1
+
+            # Size filter
+            if not (_MIN_SIDE_PX <= w <= _MAX_SIDE_PX and
+                    _MIN_SIDE_PX <= h <= _MAX_SIDE_PX):
+                continue
+
+            # Squareness filter
+            if min(w, h) / max(w, h) < _MIN_SQUARENESS:
+                continue
+
+            # Confidence filter
+            if raw["confidence"] < _FINAL_CONF:
+                continue
+
+            candidates.append({
+                "bbox_page":   [x1, y1, x2, y2],
                 "shape":       shape,
                 "confidence":  round(raw["confidence"], 4),
                 "notes":       f"yolo:{class_name}",
@@ -161,7 +169,24 @@ class YOLOColumnAgent(BaseYOLOAgent):
                 "type_mark":   None,
             })
 
-        return self._nms(canonical)
+        # Spatial grid filter — removes detections in title block / legend margins.
+        # Only applied when enough candidates exist to compute a stable percentile.
+        if len(candidates) > 15:
+            cx = np.array([(d["bbox_page"][0] + d["bbox_page"][2]) / 2
+                           for d in candidates])
+            cy = np.array([(d["bbox_page"][1] + d["bbox_page"][3]) / 2
+                           for d in candidates])
+            x_lo, x_hi = np.percentile(cx, 5),  np.percentile(cx, 95)
+            y_lo, y_hi = np.percentile(cy, 5),  np.percentile(cy, 95)
+            mx = (x_hi - x_lo) * 0.15   # 15 % padding to include border columns
+            my = (y_hi - y_lo) * 0.15
+            candidates = [
+                d for d in candidates
+                if (x_lo - mx <= (d["bbox_page"][0] + d["bbox_page"][2]) / 2 <= x_hi + mx
+                    and y_lo - my <= (d["bbox_page"][1] + d["bbox_page"][3]) / 2 <= y_hi + my)
+            ]
+
+        return candidates
 
 
 # ══════════════════════════════════════════════════════════════════════════════
