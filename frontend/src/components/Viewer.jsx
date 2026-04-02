@@ -95,7 +95,7 @@ const Viewer = ({ modelUrl, onElementSelect, selectedMesh }) => {
 
   return (
     <div className="w-full h-full bg-slate-900">
-      <Canvas shadows dpr={[1, 2]} camera={{ fov: 50, position: [10, 10, 10] }}>
+      <Canvas shadows dpr={[1, 2]} camera={{ fov: 50, near: 0.01, far: 10000 }}>
         <Suspense fallback={null}>
           <Stage environment="city" intensity={0.6}>
             <SelectableModel
