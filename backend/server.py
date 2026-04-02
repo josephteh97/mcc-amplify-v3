@@ -136,6 +136,7 @@ def _run_pipeline_bg(job_id: str, pdf_path: str, ctx: dict) -> None:
             project_context=ctx,
             page_num=0,
             verbose=False,
+            job_id=job_id,
         )
         _prog(90, "Finalising…")
 

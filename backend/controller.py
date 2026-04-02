@@ -208,6 +208,7 @@ def run_pipeline(
     project_context: dict | None = None,
     page_num: int = 0,
     verbose: bool = False,
+    job_id: str | None = None,
 ) -> dict:
     """
     Execute the full Detection → Validation → Translation pipeline.
@@ -259,6 +260,8 @@ def run_pipeline(
         grid_result   = f_grid.result()
         column_result = f_cols.result()
     raw_geometry = _parse_detections(pdf_path, grid_result, column_result)
+    if job_id:
+        raw_geometry["job_id"] = job_id
 
     timings["detection_s"] = round(time.time() - t0, 2)
     job_id = raw_geometry["job_id"]
