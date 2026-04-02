@@ -20,6 +20,7 @@ Endpoints (all under /api/):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import threading
@@ -28,8 +29,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -207,18 +209,118 @@ def download_gltf(job_id: str):
     return _serve_job_file(job_id, "gltf", "glb", "model/gltf-binary")
 
 
-# ── Stub endpoints so the frontend doesn't spam 404s ─────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Chat agent — Ollama-backed AI Supervisor
+# ══════════════════════════════════════════════════════════════════════════════
+
+_OLLAMA_URL = "http://localhost:11434"
+
+# Priority order: first is default, rest are fallbacks
+_CHAT_MODELS = [
+    {"backend": "qwen3.5:2b",   "display_name": "Qwen3.5 2B",   "short": "Qwen3.5"},
+    {"backend": "llama3.1:8b",  "display_name": "Llama 3.1 8B", "short": "Llama3.1"},
+    {"backend": "qwen2.5vl:3b", "display_name": "Qwen2.5VL 3B", "short": "Qwen2.5"},
+]
+
+# Per-user conversation history (bounded to last 20 turns)
+_chat_sessions: dict[str, list] = {}
+
+_CHAT_SYSTEM_PROMPT = (
+    "You are an AI supervisor for MCC Amplify, a BIM system that converts floor plan PDFs "
+    "into 3D Revit models. Help users understand detected elements (walls, columns, doors, "
+    "windows, floors), interpret analysis results, and make corrections. Be concise."
+)
+
+
+def _ollama_chat(model: str, messages: list) -> str:
+    resp = requests.post(
+        f"{_OLLAMA_URL}/api/chat",
+        json={"model": model, "messages": messages, "stream": False},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()["message"]["content"]
+
+
+def _job_context(job_id: str | None) -> str:
+    if not job_id or job_id not in _jobs:
+        return ""
+    job = _jobs[job_id]
+    result = job.get("result") or {}
+    stats  = result.get("stats", {})
+    files  = result.get("files", {})
+    return (
+        f"\n\nActive job: {job_id[:8]}… | status: {job.get('status')} | "
+        f"walls: {stats.get('walls', '?')} | columns: {stats.get('columns', '?')} | "
+        f"RVT: {'ready' if files.get('rvt') else 'pending'}"
+    )
+
 
 @app.get("/api/chat/models")
 def chat_models():
-    return {"models": []}
+    try:
+        resp = requests.get(f"{_OLLAMA_URL}/api/tags", timeout=5)
+        available = {m["name"] for m in resp.json().get("models", [])}
+    except Exception:
+        available = set()
+    models = [
+        {**m, "available": m["backend"] in available, "provider": "Ollama"}
+        for m in _CHAT_MODELS
+    ]
+    default = next((m["backend"] for m in models if m["available"]), _CHAT_MODELS[0]["backend"])
+    return {"models": models, "default": default}
 
 
 @app.websocket("/ws/chat/{user_id}")
 async def ws_chat(websocket: WebSocket, user_id: str):
-    # Chat agent not implemented in v2 — accept then close so browser stops retrying
     await websocket.accept()
-    await websocket.close(code=1001)
+    history = _chat_sessions.setdefault(user_id, [])
+    try:
+        while True:
+            raw   = await websocket.receive_text()
+            frame = json.loads(raw)
+            if frame.get("type") != "user_message":
+                continue
+
+            user_text = frame.get("message", "").strip()
+            if not user_text:
+                continue
+
+            ctx             = frame.get("context", {})
+            requested_model = ctx.get("model") or _CHAT_MODELS[0]["backend"]
+            job_id          = ctx.get("job_id")
+
+            # Requested model first, then the others as fallbacks
+            fallback_order = [requested_model] + [
+                m["backend"] for m in _CHAT_MODELS if m["backend"] != requested_model
+            ]
+
+            history.append({"role": "user", "content": user_text})
+            messages = (
+                [{"role": "system", "content": _CHAT_SYSTEM_PROMPT + _job_context(job_id)}]
+                + history
+            )
+
+            reply = None
+            for model in fallback_order:
+                try:
+                    reply = await asyncio.to_thread(_ollama_chat, model, messages)
+                    break
+                except Exception:
+                    continue
+
+            if reply is None:
+                reply = "No AI models are reachable. Make sure Ollama is running (`ollama serve`)."
+
+            history.append({"role": "assistant", "content": reply})
+            # Keep history bounded to last 20 turns
+            if len(history) > 20:
+                history[:] = history[-20:]
+
+            await websocket.send_text(json.dumps({"type": "agent_message", "message": reply}))
+
+    except WebSocketDisconnect:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
