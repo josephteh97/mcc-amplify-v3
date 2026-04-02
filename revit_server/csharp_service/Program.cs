@@ -29,7 +29,7 @@ namespace RevitService
             _externalEvent = ExternalEvent.Create(_handler);
             _config = LoadConfiguration();
 
-            Task.Run(() => StartHttpServer());
+            Task.Run(() => StartHttpServer(_config));
             return Result.Succeeded;
         }
 
@@ -46,7 +46,7 @@ namespace RevitService
             SetupLogging();
             Log.Information("Starting in Standalone Mode");
             TryInitStandalone();
-            await StartHttpServer();
+            await StartHttpServer(_config);
         }
 
         private static void SetupLogging()
@@ -79,13 +79,15 @@ namespace RevitService
             return JsonConvert.DeserializeObject<Config>(json) ?? new Config();
         }
 
-        static async Task StartHttpServer()
+        static async Task StartHttpServer(Config config = null)
         {
+            int port = config?.ApiSettings?.Port ?? 5000;
+            IPAddress bindAddress = IPAddress.Any;
             Socket listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             try {
-                listener.Bind(new IPEndPoint(IPAddress.Any, 49152));
+                listener.Bind(new IPEndPoint(bindAddress, port));
                 listener.Listen(100);
-                Log.Information("🚀 SOCKET SERVER ACTIVE on port 49152");
+                Log.Information($"🚀 SOCKET SERVER ACTIVE on port {port}");
 
                 while (_isRunning) {
                     Socket handler = await listener.AcceptAsync();

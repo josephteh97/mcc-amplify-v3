@@ -52,8 +52,8 @@ timeout /t 10 /nobreak > nul
 set /a retry_count+=1
 
 echo.
-echo [Attempt %retry_count%] Checking Port 49152 Status...
-netstat -ano | findstr LISTENING | findstr :49152 >nul
+echo [Attempt %retry_count%] Checking Port 5000 Status...
+netstat -ano | findstr LISTENING | findstr :5000 >nul
 
 if %errorlevel% neq 0 (
     if %retry_count% lss 6 (
@@ -68,7 +68,7 @@ if %errorlevel% neq 0 (
 :: 7. TCP Connection Test
 echo.
 echo ✅ Port is LISTENING! Running final TCP Handshake...
-powershell -Command "Test-NetConnection -ComputerName localhost -Port 49152"
+powershell -Command "Test-NetConnection -ComputerName localhost -Port 5000"
 
 :END
 echo.
