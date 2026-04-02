@@ -23,7 +23,6 @@ Usage (Python):
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
 import time
@@ -42,9 +41,12 @@ from validation.agent  import ValidationAgent
 from translator.agent  import BIMTranslatorAgent
 import gltf_exporter
 
-# Detection agents (existing — imported without modification)
-_GRID_AGENT_DIR   = _ROOT / "grid-detection-agent"
-_COLUMN_AGENT_DIR = _ROOT / "pdf_detection_agent"
+# Detection agents
+_GRID_AGENT_DIR = _ROOT / "grid-detection-agent"
+
+# YOLO column agent (replaces pdf_detection_agent Ollama-vision approach)
+sys.path.insert(0, str(_ROOT))
+from yolo_detection_agents.column_agent import YOLOColumnAgent as _YOLOColumnAgent
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -72,33 +74,20 @@ def _run_grid_detection(pdf_path: str, verbose: bool = False) -> dict:
 
 
 def _run_column_detection(pdf_path: str, page_num: int = 0) -> dict:
-    if not _COLUMN_AGENT_DIR.exists():
-        print(f"  [controller] pdf_detection_agent not found at {_COLUMN_AGENT_DIR}")
-        return {}
-    # Use a unique module label so it never collides with the grid agent's
-    # 'agent' entry in sys.modules (both run in the same process).
-    # Must also register in sys.modules before exec_module so @dataclass
-    # decorators can resolve cls.__module__ via sys.modules lookup.
-    label      = "col_agent"
-    agent_path = _COLUMN_AGENT_DIR / "agent.py"
-    sys.path.insert(0, str(_COLUMN_AGENT_DIR))
     try:
-        spec = importlib.util.spec_from_file_location(label, agent_path)
-        mod  = importlib.util.module_from_spec(spec)
-        sys.modules[label] = mod          # register before exec so @dataclass works
-        spec.loader.exec_module(mod)
-        result = mod.detect_file(pdf_path, page_num=page_num)
+        agent  = _YOLOColumnAgent()
+        result = agent.detect(pdf_path, page_num=page_num)
+        if "error" in result:
+            print(f"  [controller] Column detection error: {result['error']}")
+            return {}
         print(
-            f"  [controller] Columns: {result.get('total_columns', 0)} on page {page_num}"
+            f"  [controller] Columns: {result.get('total_columns', 0)} on page {page_num} "
+            f"[model={result.get('model', 'unknown')}]"
         )
         return result
     except Exception as exc:
         print(f"  [controller] Column detection failed: {exc}")
         return {}
-    finally:
-        sys.modules.pop(label, None)
-        if str(_COLUMN_AGENT_DIR) in sys.path:
-            sys.path.remove(str(_COLUMN_AGENT_DIR))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
