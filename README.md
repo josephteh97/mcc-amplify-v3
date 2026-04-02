@@ -10,131 +10,198 @@ Built for Main Contractor DfMA workflows under **Singapore SS CP 65 / BCA DfMA A
 
 ```mermaid
 flowchart TD
-    PDF(["`**PDF Floor Plan**
-    *.pdf input*`"])
+    USER(["User Browser"])
 
-    subgraph DETECT["STAGE 1 — Detection  (Parallel)"]
+    subgraph FE["FRONTEND  (Vite · localhost:5173)"]
         direction LR
-        GA["**Grid Detection Agent**
-        grid-detection-agent/
+        UP["UploadPanel
         ────────────────────────
-        Renders PDF → SEA-LION vision
-        Margin scan & reconcile
-        Memory: grid_memory.db
+        Upload PDF · status poll
+        Download RVT / GLB"]
+        VW["Viewer
         ────────────────────────
-        Out: vertical_labels
-             horizontal_labels
-             confidence"]
-
-        CA["**Column Detection Agent**
-        pdf_detection_agent/
+        Three.js · GLB preview
+        Click-to-select elements"]
+        EP["EditPanel
         ────────────────────────
-        Tiled sliding window
-        SEA-LION column detect
-        Memory: detections.db
+        Patch element geometry
+        Trigger rebuild"]
+        CP["ChatPanel
         ────────────────────────
-        Out: detections[]
-             bbox_page coords"]
+        WebSocket AI supervisor
+        Ollama model selector"]
     end
 
-    PARSE["**detection_parser**  (controller)
-    ────────────────────────────────────
-    Normalises both outputs →
-    canonical Raw Geometry JSON
-    Derives feature_signature"]
+    subgraph BE["BACKEND API  (FastAPI · localhost:8000)"]
+        direction LR
+        REST["REST
+        ──────────────────────────────────
+        POST  /api/upload
+        POST  /api/process/{id}
+        GET   /api/status/{id}
+        GET   /api/download/rvt|gltf/{id}
+        GET|PUT /api/project_profile
+        GET   /api/model/{id}/recipe
+        PATCH /api/model/{id}/recipe
+        POST  /api/rebuild/{id}"]
+        WS["WebSocket
+        ──────────────────────────────────
+        WS /ws/chat/{user_id}
+        Ollama fallback chain:
+        Qwen3.5 → Llama3.1 → Qwen2.5
+        Job context injected per turn"]
+    end
+
+    subgraph DETECT["STAGE 1 — Detection  (ThreadPoolExecutor · parallel)"]
+        direction LR
+        GA["Grid Detection Agent
+        grid-detection-agent/agent.py
+        ──────────────────────────────
+        Render PDF → SEA-LION vision
+        Margin scan & reconcile
+        Memory: grid_memory.db
+        ──────────────────────────────
+        → vertical_labels
+          horizontal_labels
+          confidence"]
+
+        CA["YOLO Column Agent
+        yolo_detection_agents/column_agent.py
+        ──────────────────────────────
+        YOLOv11 · column-detect.pt
+        CLAHE contrast · NMS post-process
+        Shapes: square / rect / round / i-beam
+        Memory: detections.db
+        ──────────────────────────────
+        → detections[]  bbox_page  shape"]
+    end
+
+    PARSE["detection_parser  (controller.py)
+    ──────────────────────────────────────────
+    Merge both outputs → Raw Geometry JSON
+    Inherit job_id · derive feature_signature"]
 
     subgraph VAL["STAGE 2 — Validation Agent  (validation/)"]
-        direction TB
+        direction LR
         MEM_V{{"@memory_first
         validation/memory.sqlite"}}
-        GC["geometry_checker
-        ──────────────
-        G1  Grid confidence
-        G2  Both axes present
+        VTOOLS["geometry_checker
+        ────────────────────
+        G1  Grid confidence ≥ 0.75
+        G2  Both V + H axes present
         C1  Known column shape
-        C2  Section in DfMA range
+        C2  Section 200 – 1500 mm
         C3  Centre coords present
-        D1  No duplicates
+        D1  No duplicate locations
         W1  Wall thickness DfMA
-        W2  Non-zero wall length"]
-        LC["loop_closer
-        ──────────────
-        Snap open wall
-        endpoints ≤10 px
-        to close boundaries"]
-        VM[("validation/
-        memory.sqlite
-        ──────────────
+        W2  Non-zero wall length
+
+        loop_closer
+        ────────────────────
+        Snap open endpoints ≤ 10 px
+
+        standard_thickness_lookup
+        ────────────────────
+        SS CP 65 / BCA DfMA 2021"]
+        VM[("validation/memory.sqlite
+        ─────────────────────
         conflict_resolutions
         validation_runs")]
     end
 
-    REF1{{"Uncorrectable
-    geometry error?"}}
+    FATAL{{"Fatal geometry?
+    C3 or W2"}}
 
     subgraph TRANS["STAGE 3 — BIM-Translator Agent  (translator/)"]
-        direction TB
+        direction LR
         MEM_T{{"@memory_first
         translator/memory.sqlite"}}
-        CT["coordinate_transformer
-        ──────────────────────
+        TTOOLS["coordinate_transformer
+        ─────────────────────────────
         Pixel → world mm
         Grid-derived scale
-        Bay width injection"]
-        RSM["revit_schema_mapper
-        ──────────────────────
-        Levels / Grids / Walls
-        Columns / Doors / Windows
-        Floors / Ceilings"]
-        RAC["revit_api_client
-        ──────────────────────
-        POST $WINDOWS_REVIT_SERVER/build-model
-        Captures C# warnings
-        Self-correction ×3"]
-        TM[("translator/
-        memory.sqlite
-        ──────────────────────
+        Snap to grid intersections
+
+        revit_schema_mapper
+        ─────────────────────────────
+        Levels · Grids · Walls
+        Columns · Doors · Windows
+        Floors · Ceilings
+
+        revit_api_client
+        ─────────────────────────────
+        POST port 5000 /api/build
+        Capture C# warnings
+        Self-correction loop ×3"]
+        TM[("translator/memory.sqlite
+        ─────────────────────────────
         api_success_patterns
         translation_runs")]
     end
 
-    REF2{{"Exhausted
-    all retries?"}}
+    RETRY{{"Retries
+    exhausted? (×3)"}}
 
     REVAL["STAGE 3b — Re-Validation
-    ──────────────────────────
-    ValidationAgent re-runs
-    with translator error
-    context injected"]
+    ────────────────────────────────────
+    New ValidationAgent()
+    Translator error + hint injected"]
 
-    REVIT["**Revit Add-in**
-    Windows · $WINDOWS_REVIT_SERVER
-    ────────────────────────
-    RevitModelBuilderAddin.dll
-    App.cs · ModelBuilder.cs
-    Creates Levels, Grids,
-    Walls, Columns, Doors,
-    Windows, Floors"]
+    subgraph REVIT["REVIT ADD-IN  (Windows · port 5000)"]
+        direction LR
+        SVC["csharp_service/Program.cs
+        HTTP server · config.json
+        ────────────────────────
+        POST /build"]
+        MB["ModelBuilder.cs
+        ────────────────────────
+        New Revit document
+        Levels → Grids → Walls
+        Columns → Doors → Windows
+        → C:\\RevitOutput\\{id}.rvt"]
+    end
 
-    RVT(["`**Output**
-    data/models/rvt/*.rvt`"])
-    HALT(["Pipeline Abort
-    Returns error_log to caller"])
+    GLTF["glTF Exporter  (gltf_exporter.py)
+    ──────────────────────────────────────────
+    Transaction JSON → trimesh meshes
+    mm → m · element naming for viewer
+    → data/models/gltf/{job_id}.glb"]
 
-    PDF --> DETECT
+    RVT(["data/models/rvt/{job_id}.rvt
+    C:\\RevitOutput\\{job_id}.rvt"])
+    GLB(["data/models/gltf/{job_id}.glb"])
+    ABORT(["Pipeline Abort
+    Returns error_log"])
+
+    USER --> UP & CP
+    UP -- "POST /api/upload\nPOST /api/process" --> REST
+    CP <--> WS
+    EP -- "PATCH recipe\nPOST rebuild" --> REST
+    REST -- "background thread\n_run_pipeline_bg()" --> DETECT
     GA & CA --> PARSE
-    PARSE --> MEM_V --> GC --> LC --> VM
-    LC --> REF1
-    REF1 -- No --> MEM_T --> CT --> RSM --> RAC --> TM
-    REF1 -- Yes --> HALT
-    RAC --> REF2
-    REF2 -- No --> REVIT --> RVT
-    REF2 -- Yes --> REVAL --> MEM_T
+    PARSE --> MEM_V --> VTOOLS --> VM
+    VTOOLS --> FATAL
+    FATAL -- "No" --> MEM_T --> TTOOLS --> TM
+    FATAL -- "Yes" --> ABORT
+    TTOOLS --> RETRY
+    RETRY -- "No" --> SVC --> MB --> RVT
+    RETRY -- "Yes" --> REVAL --> MEM_T
+    MB --> GLTF --> GLB
+    VW -- "Select element" --> EP
+    RVT --> REST
+    GLB --> REST
+    REST -- "GET /api/download/rvt" --> UP
+    REST -- "GET /api/download/gltf" --> VW
 
-    style DETECT fill:#1a3a5c,color:#fff,stroke:#4a9eff
+    style FE     fill:#1a2a4a,color:#fff,stroke:#4a9eff
+    style BE     fill:#1a1a3a,color:#fff,stroke:#8a8aff
+    style DETECT fill:#1a3a5c,color:#fff,stroke:#4adeff
     style VAL    fill:#1a3a2c,color:#fff,stroke:#4aff9e
     style TRANS  fill:#3a1a2c,color:#fff,stroke:#ff4a9e
     style REVIT  fill:#3a2a1a,color:#fff,stroke:#ffaa4a
+    style PARSE  fill:#2a2a3a,color:#fff,stroke:#9abaff
+    style GLTF   fill:#2a2a3a,color:#fff,stroke:#9abaff
+    style REVAL  fill:#2a3a3a,color:#fff,stroke:#4affde
 ```
 
 ---
@@ -146,13 +213,13 @@ Each agent is a **fully isolated unit** with its own private toolset and memory 
 | Agent | Directory | Private Tools | Private Memory | Responsibility |
 |---|---|---|---|---|
 | **Grid Detection** | `grid-detection-agent/` | `tools.py` — render, detect, verify, margin-scan | `grid_memory.db` | Extract structural grid labels from PDF |
-| **Column Detection** | `pdf_detection_agent/` | `agent.py` — tiled sliding window | `detections.db` | Detect column positions and shapes |
+| **Column Detection** | `yolo_detection_agents/` | `column_agent.py` — YOLOv11 + CLAHE + NMS | `detections.db` | Detect column positions and shapes |
 | **Validation** | `validation/` | `geometry_checker`, `loop_closer`, `standard_thickness_lookup`, `memory_io` | `memory.sqlite` | DfMA rule enforcement + wall topology repair |
 | **BIM-Translator** | `translator/` | `coordinate_transformer`, `revit_schema_mapper`, `revit_api_client`, `memory_io` | `memory.sqlite` | Pixel→mm, Revit JSON mapping, API dispatch |
 
 ### BaseAgent Contract
 
-All v2 agents inherit from `base_agent.BaseAgent`:
+All agents inherit from `base_agent.BaseAgent`:
 
 - **`@memory_first`** — queries the agent's private memory *before* `_process()` runs; injects correction hint into payload
 - **`run(payload)`** — single public entry point; wraps `_process()` with error capture and SQLite run logging
@@ -193,36 +260,49 @@ Both memories also write `memory.json` as a human-readable **Lessons Learned** l
 ## Project Structure
 
 ```
-mcc-amplify-v2/
-├── base_agent.py              # Abstract BaseAgent + @memory_first decorator
-├── controller.py              # Pipeline orchestrator
-├── seed_memory.py             # One-time bootstrap: loads DfMA rules from v1
+mcc-amplify-v3/
+├── backend/
+│   ├── base_agent.py          # Abstract BaseAgent + @memory_first decorator
+│   ├── controller.py          # Pipeline orchestrator (Detection → Validation → Translation)
+│   ├── server.py              # FastAPI server — REST endpoints + WebSocket chat
+│   └── gltf_exporter.py      # Transaction JSON → GLB (trimesh)
 │
-├── grid-detection-agent/      # EXISTING — Grid label detection (SEA-LION)
+├── grid-detection-agent/      # Grid label detection (SEA-LION vision)
 │   ├── agent.py               # Render → detect → verify → margin-scan → reconcile
 │   └── tools.py               # PDF render, vision detect, zoom margin, memory CRUD
 │
-├── pdf_detection_agent/       # EXISTING — Column detection (SEA-LION)
-│   └── agent.py               # Tiled sliding-window with correction memory
+├── yolo_detection_agents/     # Column detection (YOLOv11)
+│   ├── column_agent.py        # YOLOColumnAgent — CLAHE, NMS, 4-shape classification
+│   ├── base_yolo_agent.py     # Lazy model load, PDF render, inference
+│   └── weights/
+│       └── column-detect.pt   # Trained YOLOv11 weights
 │
-├── validation/                # NEW — DfMA Validation Agent
+├── validation/                # DfMA Validation Agent
 │   ├── agent.py               # ValidationAgent
 │   ├── tools.py               # geometry_checker, loop_closer, standard_thickness_lookup
 │   └── memory.sqlite          # conflict_resolutions, validation_runs
 │
-├── translator/                # NEW — BIM-Translator Agent
+├── translator/                # BIM-Translator Agent
 │   ├── agent.py               # BIMTranslatorAgent (self-correction loop ×3)
 │   ├── tools.py               # coordinate_transformer, revit_schema_mapper, revit_api_client
 │   └── memory.sqlite          # api_success_patterns, translation_runs
 │
 ├── revit_server/              # Windows Revit Add-in service
-│   ├── csharp_service/        # C# .NET service — ModelBuilder.cs, port 5000
-│   │   ├── build.bat          # dotnet build + registry DLL trust + launch Revit
-│   │   └── run.bat            # Launch RevitService.exe
-│   └── RevitAddin/            # IExternalApplication Add-in (alternative)
+│   └── csharp_service/        # C# .NET — HTTP server port 5000
+│       ├── Program.cs         # HTTP listener, request routing
+│       ├── ModelBuilder.cs    # Build Revit model from Transaction JSON
+│       ├── config.json        # Port, API key, CORS settings
+│       └── build.bat          # dotnet build + registry trust + launch Revit
 │
-└── frontend/
-    └── run_frontend.sh        # Vite dev server → http://localhost:5173
+└── frontend/                  # Vite + React UI
+    └── src/
+        ├── components/
+        │   ├── Layout.jsx     # Three-column workspace
+        │   ├── UploadPanel.jsx  # Upload, status poll, downloads
+        │   ├── Viewer.jsx     # Three.js 3D GLB viewer
+        │   ├── EditPanel.jsx  # Element patch editor
+        │   └── ChatPanel.jsx  # WebSocket AI chat
+        └── run_frontend.sh    # → http://localhost:5173
 ```
 
 ---
