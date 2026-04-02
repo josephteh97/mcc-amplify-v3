@@ -45,8 +45,8 @@ import gltf_exporter
 _GRID_AGENT_DIR = _ROOT / "grid-detection-agent"
 
 # YOLO column agent (replaces pdf_detection_agent Ollama-vision approach)
-sys.path.insert(0, str(_ROOT))
 from yolo_detection_agents.column_agent import YOLOColumnAgent as _YOLOColumnAgent
+_YOLO_AGENT = _YOLOColumnAgent()  # singleton — model loads once on first detect() call
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -75,8 +75,7 @@ def _run_grid_detection(pdf_path: str, verbose: bool = False) -> dict:
 
 def _run_column_detection(pdf_path: str, page_num: int = 0) -> dict:
     try:
-        agent  = _YOLOColumnAgent()
-        result = agent.detect(pdf_path, page_num=page_num)
+        result = _YOLO_AGENT.detect(pdf_path, page_num=page_num)
         if "error" in result:
             print(f"  [controller] Column detection error: {result['error']}")
             return {}
@@ -249,7 +248,7 @@ def run_pipeline(
         grid_result   = f_grid.result()
         column_result = f_cols.result()
     raw_geometry = _parse_detections(pdf_path, grid_result, column_result)
-    if job_id:
+    if job_id is not None:
         raw_geometry["job_id"] = job_id
 
     timings["detection_s"] = round(time.time() - t0, 2)
