@@ -1,0 +1,67 @@
+ ▐▛███▜▌   Claude Code v2.1.89
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/Documents/mcc-amplify-v2
+
+● Here's what exists and what doesn't:
+
+  ---
+  What EXISTS — scale conversion
+
+  translator/tools.py, lines 114–184 — coordinate_transformer()
+
+  The pixel→mm scale is derived from the grid label count + project context bay
+  widths:
+
+  translator/tools.py:114-173   Scale derivation
+    • If bay widths in project_context → px_per_mm_x/y from explicit bay sizes
+    • Else if grid labels ≥ 2 → assumes 7500mm typical bay, equal spacing
+    • Else → 1px = 1mm fallback with warning
+
+  translator/tools.py:180-184   Column conversion
+    col["location_mm"] = {"x": round(cx / px_per_mm_x, 1),
+                           "y": round(cy / px_per_mm_y, 1),
+                           "z": 0.0}
+
+  The docstring at line 85 says "snap to nearest grid intersection" but the
+  actual code does not snap — it just scales.
+
+  ---
+  What is MISSING — grid snapping
+
+  There is no snapping mechanism. A column detected at pixel centre (312, 487)
+  becomes (312/px_per_mm, 487/px_per_mm) in mm — a raw proportional conversion.
+  It is never projected onto the nearest grid line intersection.
+
+  The only coordinate correctness check is in validation/tools.py:277-282 — the
+  D1 duplicate rule — which rounds pixel centres to the nearest 50px bucket to
+  flag overlapping detections. That is deduplication, not alignment.
+
+  ---
+  Summary
+
+  ┌───────────────┬─────────────────────┬─────────┬─────────────────────────┐
+  │     Step      │        File         │  Lines  │      What it does       │
+  ├───────────────┼─────────────────────┼─────────┼─────────────────────────┤
+  │ px→mm scale   │                     │         │ Infers px/mm from grid  │
+  │ derivation    │ translator/tools.py │ 114–173 │ label count + bay       │
+  │               │                     │         │ widths                  │
+  ├───────────────┼─────────────────────┼─────────┼─────────────────────────┤
+  │ Column        │                     │         │ Direct px / px_per_mm — │
+  │ coordinate    │ translator/tools.py │ 180–184 │  no snapping            │
+  │ conversion    │                     │         │                         │
+  ├───────────────┼─────────────────────┼─────────┼─────────────────────────┤
+  │ Duplicate     │ validation/tools.py │ 277–282 │ 50px rounding to detect │
+  │ check (D1)    │                     │         │  overlaps only          │
+  ├───────────────┼─────────────────────┼─────────┼─────────────────────────┤
+  │ Grid world    │                     │         │ Lookup table of grid    │
+  │ positions     │ translator/tools.py │ 196–206 │ lines in mm — used for  │
+  │ built         │                     │         │ Revit grids only, not   │
+  │               │                     │         │ column alignment        │
+  └───────────────┴─────────────────────┴─────────┴─────────────────────────┘
+
+  Bottom line: if the vision model detects a column 40px away from the true grid
+   intersection, that 40px offset carries all the way into the Revit model.
+  There is currently no snapping pass to correct it. Would you like me to add
+  one?
+
+✻ Cooked for 1m 40s
