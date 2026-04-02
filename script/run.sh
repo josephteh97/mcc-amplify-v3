@@ -97,7 +97,7 @@ setup() {
     pip3 install -q -r "$ROOT/requirements.txt"
     ok "Python deps installed"
     info "Seeding agent memories ..."
-    cd "$ROOT" && python3 seed_memory.py
+    cd "$ROOT" && python3 backend/seed_memory.py
     ok "Memory seeded"
     echo ""
     ok "Setup complete. Run the pipeline with:"
@@ -124,7 +124,7 @@ start_frontend() {
 
     free_port 8000
     info "Starting API backend  →  http://localhost:8000"
-    cd "$ROOT" && python3 server.py &
+    cd "$ROOT" && python3 backend/server.py &
     BACKEND_PID=$!
 
     for ((i=1; i<=10; i++)); do
@@ -218,7 +218,7 @@ run_pipeline() {
     info "Server: $WINDOWS_REVIT_SERVER"
     [[ -f "$PDF_PATH" ]] || { err "PDF not found: $PDF_PATH"; exit 1; }
     mkdir -p "$ROOT/data/models/rvt"
-    cd "$ROOT" && python3 controller.py "$PDF_PATH" "$@"
+    cd "$ROOT" && python3 backend/controller.py "$PDF_PATH" "$@"
 }
 
 # =============================================================================

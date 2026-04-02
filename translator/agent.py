@@ -29,8 +29,9 @@ from pathlib import Path
 # ── Local imports (isolation: only translator/ tools are used) ─────────────
 _ROOT = Path(__file__).parent.parent
 _HERE = Path(__file__).parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+for _p in (str(_ROOT), str(_ROOT / "backend")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from base_agent import BaseAgent, memory_first
 

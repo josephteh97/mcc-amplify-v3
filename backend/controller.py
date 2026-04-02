@@ -31,17 +31,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-# ── Agent imports ─────────────────────────────────────────────────────────────
-# Each agent lives in its own isolated directory and uses its own tools.py.
-sys.path.insert(0, str(Path(__file__).parent))
+# ── Paths ─────────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).parent.parent
+
+for _p in (str(_ROOT), str(Path(__file__).parent)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from validation.agent  import ValidationAgent
 from translator.agent  import BIMTranslatorAgent
 import gltf_exporter
 
 # Detection agents (existing — imported without modification)
-_GRID_AGENT_DIR   = Path(__file__).parent / "grid-detection-agent"
-_COLUMN_AGENT_DIR = Path(__file__).parent / "pdf_detection_agent"
+_GRID_AGENT_DIR   = _ROOT / "grid-detection-agent"
+_COLUMN_AGENT_DIR = _ROOT / "pdf_detection_agent"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -386,7 +389,7 @@ def run_pipeline(
     tx_geometry = translator_result.get("transaction_json", {})
     if tx_geometry:
         try:
-            gltf_out = Path(__file__).parent / "data" / "models" / "gltf" / f"{job_id}.glb"
+            gltf_out = _ROOT / "data" / "models" / "gltf" / f"{job_id}.glb"
             gltf_path = gltf_exporter.export(tx_geometry, str(gltf_out))
         except Exception as exc:
             print(f"  [controller] glTF export skipped: {exc}")
@@ -474,8 +477,7 @@ if __name__ == "__main__":
     if args.context:
         ctx_path = Path(args.context)
         if not ctx_path.is_absolute():
-            # resolve relative to project root (where controller.py lives)
-            ctx_path = Path(__file__).parent / ctx_path
+            ctx_path = _ROOT / ctx_path
         with open(ctx_path, encoding="utf-8") as f:
             project_context = json.load(f)
 

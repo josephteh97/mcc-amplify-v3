@@ -33,10 +33,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-# ── project root on sys.path ──────────────────────────────────────────────────
-_ROOT = Path(__file__).parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# ── Paths ─────────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).parent.parent
+
+for _p in (str(_ROOT), str(Path(__file__).parent)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import controller  # noqa: E402 — must come after sys.path setup
 
@@ -60,7 +62,7 @@ _RVT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Default project context — overridable via PUT /api/project_profile
 _profile: dict = {}
-_PROFILE_PATH = _ROOT / "project_context.json"
+_PROFILE_PATH = _ROOT / "translator" / "project_context.json"
 if _PROFILE_PATH.exists():
     try:
         _profile = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
@@ -191,7 +193,7 @@ def _serve_job_file(job_id: str, file_key: str, extension: str, media_type: str)
     path = (job.get("result") or {}).get("files", {}).get(file_key)
     if not path or not Path(path).exists():
         raise HTTPException(404, f"{extension.upper()} file not yet available.")
-    filename = Path(job.get("filename", "model.pdf")).stem + f".{extension}"
+    filename = f"{Path(job.get('filename', 'model.pdf')).stem}_{job_id}.{extension}"
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
@@ -328,4 +330,4 @@ def health():
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend.server:app", host="0.0.0.0", port=8000, reload=False)
