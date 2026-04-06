@@ -25,6 +25,7 @@ flowchart TD
         EP["EditPanel
         ────────────────────────
         Patch element geometry
+        Confirm / dismiss quarantine
         Trigger rebuild"]
         CP["ChatPanel
         ────────────────────────
@@ -70,16 +71,53 @@ flowchart TD
         ──────────────────────────────
         YOLOv11 · column-detect.pt
         Tiled 1280×1280 · torchvision NMS
-        Single class → shape resolved by OCR
+        Single class · page image cached
         Memory: detections.db
         ──────────────────────────────
-        → detections[]  bbox_page  shape"]
+        → detections[]  bbox_page"]
     end
 
     PARSE["detection_parser  (controller.py)
     ──────────────────────────────────────────
     Merge both outputs → Raw Geometry JSON
     Inherit job_id · derive feature_signature"]
+
+    subgraph RESOLVE["STAGE 1b — Type Resolution  (type_resolution_agents/)"]
+        direction LR
+        TR["ColumnTypeResolver
+        ──────────────────────────────────
+        1. OCR scan — tag adjacent to element
+        2. Geometric — Hough circle · aspect ratio
+           → est_width_mm  est_depth_mm
+        3. Cluster — propagate label within group
+        4. Spatial k-NN — inherit from neighbours
+        5. Synthetic — GROUP_A / B / C fallback
+        ──────────────────────────────────
+        → type_mark · shape · resolution_method
+          resolution_confidence"]
+    end
+
+    subgraph CROSSVAL["STAGE 1c — Cross-Element Validation  (cross_element_validator/)"]
+        direction LR
+        CV["CrossElementValidator
+        ──────────────────────────────────
+        ① Geometric plausibility
+           bbox squareness vs element type
+        ② Overlap conflict
+           cross-type IoU  (column vs wall)
+        ③ Grid intersection
+           distance penalty from nearest node
+        ④ Neighbourhood consensus
+           spatial outlier in column grid
+        ──────────────────────────────────
+        Plausibility score per detection
+        Low score → quarantine (non-blocking)"]
+    end
+
+    QUAR(["Quarantined detections
+    ─────────────────────────
+    Suspicious / misclassified
+    Flagged for human review"])
 
     subgraph VAL["STAGE 2 — Validation Agent  (validation/)"]
         direction LR
@@ -149,11 +187,11 @@ flowchart TD
 
     subgraph REVIT["REVIT ADD-IN  (Windows · port 5000)"]
         direction LR
-        SVC["csharp_service/Program.cs
-        HTTP server · config.json
+        SVC["RevitService/ApiServer.cs
         ────────────────────────
-        POST /build"]
-        MB["ModelBuilder.cs
+        POST /build-model
+        Returns raw .rvt bytes"]
+        MB["RevitService/ModelBuilder.cs
         ────────────────────────
         New Revit document
         Levels → Grids → Walls
@@ -179,7 +217,10 @@ flowchart TD
     EP -- "PATCH recipe\nPOST rebuild" --> REST
     REST -- "background thread\n_run_pipeline_bg()" --> DETECT
     GA & CA --> PARSE
-    PARSE --> MEM_V --> VTOOLS --> VM
+    PARSE --> TR
+    TR --> CV
+    CV -- "quarantined detections" --> QUAR
+    CV --> MEM_V --> VTOOLS --> VM
     VTOOLS --> FATAL
     FATAL -- "No" --> MEM_T --> TTOOLS --> TM
     FATAL -- "Yes" --> ABORT
@@ -188,20 +229,24 @@ flowchart TD
     RETRY -- "Yes" --> REVAL --> MEM_T
     MB --> GLTF --> GLB
     VW -- "Select element" --> EP
+    QUAR -- "review in" --> EP
     RVT --> REST
     GLB --> REST
     REST -- "GET /api/download/rvt" --> UP
     REST -- "GET /api/download/gltf" --> VW
 
-    style FE     fill:#1a2a4a,color:#fff,stroke:#4a9eff
-    style BE     fill:#1a1a3a,color:#fff,stroke:#8a8aff
-    style DETECT fill:#1a3a5c,color:#fff,stroke:#4adeff
-    style VAL    fill:#1a3a2c,color:#fff,stroke:#4aff9e
-    style TRANS  fill:#3a1a2c,color:#fff,stroke:#ff4a9e
-    style REVIT  fill:#3a2a1a,color:#fff,stroke:#ffaa4a
-    style PARSE  fill:#2a2a3a,color:#fff,stroke:#9abaff
-    style GLTF   fill:#2a2a3a,color:#fff,stroke:#9abaff
-    style REVAL  fill:#2a3a3a,color:#fff,stroke:#4affde
+    style FE      fill:#1a2a4a,color:#fff,stroke:#4a9eff
+    style BE      fill:#1a1a3a,color:#fff,stroke:#8a8aff
+    style DETECT  fill:#1a3a5c,color:#fff,stroke:#4adeff
+    style RESOLVE fill:#1a2a3a,color:#fff,stroke:#4ab8ff
+    style CROSSVAL fill:#1a2a2a,color:#fff,stroke:#4affd4
+    style VAL     fill:#1a3a2c,color:#fff,stroke:#4aff9e
+    style TRANS   fill:#3a1a2c,color:#fff,stroke:#ff4a9e
+    style REVIT   fill:#3a2a1a,color:#fff,stroke:#ffaa4a
+    style PARSE   fill:#2a2a3a,color:#fff,stroke:#9abaff
+    style GLTF    fill:#2a2a3a,color:#fff,stroke:#9abaff
+    style REVAL   fill:#2a3a3a,color:#fff,stroke:#4affde
+    style QUAR    fill:#3a2a1a,color:#fff,stroke:#ffdd4a
 ```
 
 ---
@@ -213,7 +258,9 @@ Each agent is a **fully isolated unit** with its own private toolset and memory 
 | Agent | Directory | Private Tools | Private Memory | Responsibility |
 |---|---|---|---|---|
 | **Grid Detection** | `grid-detection-agent/` | `tools.py` — render, detect, verify, margin-scan | `grid_memory.db` | Extract structural grid labels from PDF |
-| **Column Detection** | `yolo_detection_agents/` | `column_agent.py` — YOLOv11 + tiled sliding-window + torchvision NMS | `detections.db` | Detect column positions and shapes |
+| **Column Detection** | `yolo_detection_agents/` | `column_agent.py` — YOLOv11 + tiled sliding-window + torchvision NMS | `detections.db` | Detect column bounding boxes (single class) |
+| **Type Resolution** | `type_resolution_agents/` | `column_resolver.py` — OCR scan, geometric fingerprint, cluster propagation, spatial k-NN | — | Resolve type mark, shape, and estimated dimensions per detection |
+| **Cross-Element Validation** | `cross_element_validator/` | geometric_plausibility, overlap_conflict, grid_intersection, neighbourhood_consensus | — | Flag misclassified detections; quarantine to EditPanel (non-blocking) |
 | **Validation** | `validation/` | `geometry_checker`, `loop_closer`, `standard_thickness_lookup`, `memory_io` | `memory.sqlite` | DfMA rule enforcement + wall topology repair |
 | **BIM-Translator** | `translator/` | `coordinate_transformer`, `revit_schema_mapper`, `revit_api_client`, `memory_io` | `memory.sqlite` | Pixel→mm, Revit JSON mapping, API dispatch |
 
@@ -263,46 +310,57 @@ Both memories also write `memory.json` as a human-readable **Lessons Learned** l
 mcc-amplify-v3/
 ├── backend/
 │   ├── base_agent.py          # Abstract BaseAgent + @memory_first decorator
-│   ├── controller.py          # Pipeline orchestrator (Detection → Validation → Translation)
+│   ├── controller.py          # Pipeline orchestrator (Stage 1 → 1b → 1c → 2 → 3)
 │   ├── server.py              # FastAPI server — REST endpoints + WebSocket chat
 │   └── gltf_exporter.py      # Transaction JSON → GLB (trimesh)
 │
-├── grid-detection-agent/      # Grid label detection (SEA-LION vision)
+├── grid-detection-agent/      # Stage 1a — Grid label detection (SEA-LION vision)
 │   ├── agent.py               # Render → detect → verify → margin-scan → reconcile
 │   └── tools.py               # PDF render, vision detect, zoom margin, memory CRUD
 │
-├── yolo_detection_agents/     # Column detection (YOLOv11)
-│   ├── column_agent.py        # YOLOColumnAgent — tiled sliding-window + torchvision NMS
-│   ├── base_yolo_agent.py     # Lazy model load, PDF render, inference
+├── yolo_detection_agents/     # Stage 1a — Column detection (YOLOv11)
+│   ├── base_yolo_agent.py     # Lazy model load, render_pdf_page(), tiled inference
+│   ├── column_agent.py        # YOLOColumnAgent — single class, page image cached
 │   └── weights/
 │       └── column-detect.pt   # Trained YOLOv11 weights
 │
-├── validation/                # DfMA Validation Agent
+├── type_resolution_agents/    # Stage 1b — Type resolution per element
+│   ├── base_resolver.py       # BaseTypeResolver — OCR scan, cluster propagation, spatial k-NN
+│   └── column_resolver.py     # ColumnTypeResolver — C1/RC1 OCR tags, Hough circle, aspect ratio
+│
+├── cross_element_validator/   # Stage 1c — Cross-element misclassification detection
+│   ├── validator.py           # CrossElementValidator — orchestrates all checks, quarantine
+│   ├── quarantine.py          # QuarantineManager — non-blocking flagging → EditPanel
+│   └── checks/
+│       ├── geometric_plausibility.py   # bbox squareness vs expected element shape
+│       ├── overlap_conflict.py         # cross-type IoU (column inside wall bbox)
+│       ├── grid_intersection.py        # distance penalty from nearest grid node
+│       └── neighbourhood_consensus.py  # spatial outlier in column grid
+│
+├── validation/                # Stage 2 — DfMA Validation Agent
 │   ├── agent.py               # ValidationAgent
 │   ├── tools.py               # geometry_checker, loop_closer, standard_thickness_lookup
 │   └── memory.sqlite          # conflict_resolutions, validation_runs
 │
-├── translator/                # BIM-Translator Agent
+├── translator/                # Stage 3 — BIM-Translator Agent
 │   ├── agent.py               # BIMTranslatorAgent (self-correction loop ×3)
 │   ├── tools.py               # coordinate_transformer, revit_schema_mapper, revit_api_client
 │   └── memory.sqlite          # api_success_patterns, translation_runs
 │
-├── revit_server/              # Windows Revit Add-in service
-│   └── csharp_service/        # C# .NET — HTTP server port 5000
-│       ├── Program.cs         # HTTP listener, request routing
-│       ├── ModelBuilder.cs    # Build Revit model from Transaction JSON
-│       ├── config.json        # Port, API key, CORS settings
-│       └── build.bat          # dotnet build + registry trust + launch Revit
+├── revit_server/              # Windows Revit Add-in service (port 5000)
+│   └── RevitService/
+│       ├── ApiServer.cs       # HTTP listener — POST /build-model → raw .rvt bytes
+│       └── ModelBuilder.cs    # Build Revit model from Transaction JSON
 │
 └── frontend/                  # Vite + React UI
     └── src/
         ├── components/
-        │   ├── Layout.jsx     # Three-column workspace
+        │   ├── Layout.jsx       # Three-column workspace
         │   ├── UploadPanel.jsx  # Upload, status poll, downloads
-        │   ├── Viewer.jsx     # Three.js 3D GLB viewer
-        │   ├── EditPanel.jsx  # Element patch editor
-        │   └── ChatPanel.jsx  # WebSocket AI chat
-        └── run_frontend.sh    # → http://localhost:5173
+        │   ├── Viewer.jsx       # Three.js 3D GLB viewer
+        │   ├── EditPanel.jsx    # Element patch + quarantine review
+        │   └── ChatPanel.jsx    # WebSocket AI chat
+        └── run_frontend.sh      # → http://localhost:5173
 ```
 
 ---

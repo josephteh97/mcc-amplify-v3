@@ -48,6 +48,14 @@ _GRID_AGENT_DIR = _ROOT / "grid-detection-agent"
 from yolo_detection_agents.column_agent import YOLOColumnAgent as _YOLOColumnAgent
 _YOLO_AGENT = _YOLOColumnAgent()  # singleton — model loads once on first detect() call
 
+# Type resolvers (one per element type)
+from type_resolution_agents.column_resolver import ColumnTypeResolver as _ColumnTypeResolver
+_COLUMN_RESOLVER = _ColumnTypeResolver()  # singleton
+
+# Cross-element validator — stateless, singleton for consistency
+from cross_element_validator.validator import CrossElementValidator as _CrossElementValidator
+_CROSS_VALIDATOR = _CrossElementValidator()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Detection Agent adapters (wrap existing agents without modifying them)
@@ -152,7 +160,7 @@ def _parse_detections(
         cy  = ((bb[1] or 0) + (bb[3] or 0)) / 2 if bb[1] is not None else None
         columns.append({
             "id":          det.get("id"),
-            "shape":       det.get("shape", "rectangular"),
+            "shape":       det.get("shape", "rectangle"),
             "confidence":  float(det.get("confidence") or 0.0),
             "bbox_page":   bb,
             "center":      [cx, cy],
@@ -259,6 +267,52 @@ def run_pipeline(
         f"  Grid: {raw_geometry['grid']['total_grid_lines']} lines | "
         f"Columns: {len(raw_geometry['columns'])}"
     )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STAGE 1b — Type Resolution
+    # Enriches each detection: type_mark, shape, est_width_mm, resolution_method
+    # ══════════════════════════════════════════════════════════════════════════
+    _banner("STAGE 1b — Type Resolution")
+    t0 = time.time()
+
+    # Reuse the image already rendered by the YOLO agent — avoids a second PDF render
+    page_image = column_result.pop("_page_image", None)
+    if page_image is not None and raw_geometry["columns"]:
+        _COLUMN_RESOLVER.resolve(
+            detections      = raw_geometry["columns"],
+            page_image      = page_image,
+            grid_result     = grid_result,
+            project_context = ctx,
+        )
+        resolved   = sum(1 for c in raw_geometry["columns"] if c.get("type_mark"))
+        unresolved = len(raw_geometry["columns"]) - resolved
+        print(
+            f"  Columns resolved: {resolved} | "
+            f"unresolved (synthetic): {unresolved}"
+        )
+    else:
+        print("  [controller] Type resolution skipped (no page image or no detections)")
+
+    timings["type_resolution_s"] = round(time.time() - t0, 2)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # STAGE 1c — Cross-Element Validation
+    # Detects misclassifications (e.g. wall detected as column) and quarantines
+    # suspicious detections without blocking the pipeline.
+    # ══════════════════════════════════════════════════════════════════════════
+    _banner("STAGE 1c — Cross-Element Validation")
+    t0 = time.time()
+
+    all_detections = {"column": raw_geometry["columns"]}
+    # future: add "wall": raw_geometry["walls"], "beam": raw_geometry["beams"]
+
+    _, quarantine_manager = _CROSS_VALIDATOR.validate(
+        all_detections = all_detections,
+        grid_result    = grid_result,
+    )
+    raw_geometry["quarantined"] = quarantine_manager.to_edit_panel_payload()
+
+    timings["cross_validation_s"] = round(time.time() - t0, 2)
 
     # ══════════════════════════════════════════════════════════════════════════
     # STAGE 2 — Validation

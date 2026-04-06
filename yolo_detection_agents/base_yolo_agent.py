@@ -76,6 +76,36 @@ except ImportError:
     _PDF2IMAGE_AVAILABLE = False
 
 
+# ── Standalone PDF renderer (no model required) ────────────────────────────────
+
+def render_pdf_page(path: Path, page_num: int, dpi: int = 300) -> Image.Image:
+    """
+    Render a single PDF page to a PIL RGB Image.
+
+    Standalone so callers (controller, type resolvers) can render without
+    instantiating a YOLO agent. BaseYOLOAgent._render_pdf delegates here.
+
+    Raises RuntimeError if neither PyMuPDF nor pdf2image is installed.
+    """
+    if _FITZ_AVAILABLE:
+        doc  = _fitz.open(str(path))
+        page = doc[page_num]
+        mat  = _fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        pix  = page.get_pixmap(matrix=mat, colorspace=_fitz.csRGB)
+        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    if _PDF2IMAGE_AVAILABLE:
+        pages = _pdf2img(str(path), dpi=dpi, first_page=page_num + 1,
+                         last_page=page_num + 1)
+        if pages:
+            return pages[0].convert("RGB")
+
+    raise RuntimeError(
+        "No PDF renderer available. Install PyMuPDF (pip install pymupdf) "
+        "or pdf2image (pip install pdf2image)."
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BaseYOLOAgent
 # ══════════════════════════════════════════════════════════════════════════════
@@ -142,6 +172,7 @@ class BaseYOLOAgent(ABC):
             "stats":         {"by_shape": by_shape, "avg_confidence": avg_conf},
             "model":         self._weights_path.name,
             "timestamp":     datetime.now().isoformat(),
+            "_page_image":   img,   # PIL Image — reused by type resolver to avoid double render
         }
 
     # ── Subclass hook ──────────────────────────────────────────────────────────
@@ -188,24 +219,7 @@ class BaseYOLOAgent(ABC):
         return Image.open(path).convert("RGB")
 
     def _render_pdf(self, path: Path, page_num: int) -> Image.Image:
-        """Rasterise a PDF page to PIL Image at self._render_dpi."""
-        if _FITZ_AVAILABLE:
-            doc  = _fitz.open(str(path))
-            page = doc[page_num]
-            mat  = _fitz.Matrix(self._render_dpi / 72.0, self._render_dpi / 72.0)
-            pix  = page.get_pixmap(matrix=mat, colorspace=_fitz.csRGB)
-            return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-        if _PDF2IMAGE_AVAILABLE:
-            pages = _pdf2img(str(path), dpi=self._render_dpi, first_page=page_num + 1,
-                             last_page=page_num + 1)
-            if pages:
-                return pages[0].convert("RGB")
-
-        raise RuntimeError(
-            "No PDF renderer available. Install PyMuPDF (pip install pymupdf) "
-            "or pdf2image (pip install pdf2image)."
-        )
+        return render_pdf_page(path, page_num, dpi=self._render_dpi)
 
     def _run_inference(self, img: Image.Image) -> list[dict]:
         """
