@@ -22,8 +22,8 @@ scipy==1.17.1
 matplotlib==3.10.8
 
 # type resolution agents
-pytesseract>=0.3.10
-opencv-python-headless>=4.9.0
+#pytesseract>=0.3.10
+#opencv-python-headless>=4.9.0
 
 chardet==7.4.0.post2
 charset-normalizer==3.4.6
