@@ -155,10 +155,10 @@ start_frontend() {
 
     [[ -f "$ROOT/grid-detection-agent/agent.py" ]] \
         && srow GREEN  "Grid detection agent"   "ready" \
-        || srow YELLOW "Grid detection agent"   "missing"
-    [[ -f "$ROOT/pdf_detection_agent/agent.py" ]] \
+        || srow YELLOW "Grid detection agent"   "missing — check grid-detection-agent/agent.py"
+    [[ -f "$ROOT/yolo_detection_agents/weights/column-detect.pt" ]] \
         && srow GREEN  "Column detection agent" "ready" \
-        || srow YELLOW "Column detection agent" "missing"
+        || srow YELLOW "Column detection agent" "missing — copy column-detect.pt to yolo_detection_agents/weights/"
 
     REVIT_BODY=$(curl -sf --max-time 3 \
         -H "X-API-Key: ${REVIT_SERVER_API_KEY}" \
