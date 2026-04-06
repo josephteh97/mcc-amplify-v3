@@ -4,7 +4,6 @@ base_yolo_agent.py — Abstract base class for per-element YOLO detection agents
 Responsibilities:
   • Load a YOLOv11 .pt weights file at construction time.
   • Render a PDF page (or open an image) at a configurable DPI.
-  • Apply CLAHE contrast enhancement (improves faint engineering-drawing lines).
   • Run YOLO inference and return raw detections in pixel-space.
   • Expose a hook `_postprocess()` for subclasses to normalise detections into
     the canonical mcc-amplify-v3 format expected by controller.py.
@@ -40,7 +39,6 @@ Full detect() return dict (matches what controller._run_column_detection returns
 
 from __future__ import annotations
 
-import io
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -50,14 +48,18 @@ import numpy as np
 from PIL import Image
 
 
-# ── Optional heavy imports (fail gracefully so tests can mock them) ────────────
+# ── Required heavy imports ─────────────────────────────────────────────────────
 
-try:
-    import cv2 as _cv2
-    _CV2_AVAILABLE = True
-except ImportError:
-    _cv2 = None          # type: ignore
-    _CV2_AVAILABLE = False
+import torch
+from torchvision.ops import nms as _torch_nms
+
+# ── Tiling constants (calibrated for 300 DPI, 1:400 scale floor plans) ────────
+
+_TILE_SIZE    = 1280   # px — matches YOLO training resolution
+_TILE_OVERLAP = 200    # px — ensures columns on tile boundaries are captured
+_NMS_IOU      = 0.45   # IoU threshold for cross-tile duplicate suppression
+
+# ── Optional heavy imports (fail gracefully so tests can mock them) ────────────
 
 try:
     import fitz as _fitz  # PyMuPDF
@@ -205,21 +207,6 @@ class BaseYOLOAgent(ABC):
             "or pdf2image (pip install pdf2image)."
         )
 
-    def _enhance(self, img: Image.Image) -> np.ndarray:
-        """
-        CLAHE contrast enhancement in LAB colour space.
-        Improves visibility of faint structural drawing lines before inference.
-        Falls back to plain numpy array if OpenCV is not available.
-        """
-        arr = np.array(img)  # HxWx3, uint8, RGB
-        if not _CV2_AVAILABLE:
-            return arr
-
-        lab   = _cv2.cvtColor(arr, _cv2.COLOR_RGB2LAB)
-        clahe = _cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-        return _cv2.cvtColor(lab, _cv2.COLOR_LAB2RGB)
-
     def _run_inference(self, img: Image.Image) -> list[dict]:
         """
         Tiled sliding-window inference.
@@ -234,18 +221,6 @@ class BaseYOLOAgent(ABC):
         Returns raw dicts: {"type": str, "bbox": [x1,y1,x2,y2], "confidence": float}
         All coordinates are in full-image pixel space.
         """
-        try:
-            import torch
-            from torchvision.ops import nms as _torch_nms
-        except ImportError as exc:
-            raise ImportError(
-                "torchvision is required. Run: pip install torchvision"
-            ) from exc
-
-        _TILE_SIZE    = 1280
-        _TILE_OVERLAP = 200
-        _NMS_IOU      = 0.45
-
         W, H  = img.size
         step  = _TILE_SIZE - _TILE_OVERLAP
         boxes_all: list[list[float]] = []
@@ -254,22 +229,22 @@ class BaseYOLOAgent(ABC):
 
         for y0 in range(0, H, step):
             for x0 in range(0, W, step):
-                x1 = min(x0 + _TILE_SIZE, W);  xa = x1 - _TILE_SIZE
-                y1 = min(y0 + _TILE_SIZE, H);  ya = y1 - _TILE_SIZE
+                x1 = min(x0 + _TILE_SIZE, W)
+                xa = x1 - _TILE_SIZE
+                y1 = min(y0 + _TILE_SIZE, H)
+                ya = y1 - _TILE_SIZE
                 tile    = img.crop((xa, ya, x1, y1))
                 results = self._model.predict(
                     source=tile, imgsz=_TILE_SIZE,
                     conf=self._conf_threshold, iou=_NMS_IOU,
                     verbose=False,
                 )[0]
-                for box, c, cls in zip(
-                    results.boxes.xyxy.cpu().numpy(),
-                    results.boxes.conf.cpu().numpy(),
-                    results.boxes.cls.cpu().numpy(),
-                ):
-                    boxes_all.append([box[0]+xa, box[1]+ya, box[2]+xa, box[3]+ya])
-                    confs_all.append(float(c))
-                    types_all.append(results.names[int(cls)])
+                # Single GPU→CPU transfer for all columns (xyxy, conf, cls in one Nx6 tensor)
+                data = results.boxes.data.cpu().numpy()
+                for row in data:
+                    boxes_all.append([row[0] + xa, row[1] + ya, row[2] + xa, row[3] + ya])
+                    confs_all.append(float(row[4]))
+                    types_all.append(results.names[int(row[5])])
 
         if not boxes_all:
             return []
@@ -291,25 +266,3 @@ class BaseYOLOAgent(ABC):
             for i in keep
         ]
 
-    # ── NMS utility (available to subclasses) ─────────────────────────────────
-
-    @staticmethod
-    def _iou(a: list[float], b: list[float]) -> float:
-        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
-        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
-        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-        if inter == 0:
-            return 0.0
-        area_a = (a[2] - a[0]) * (a[3] - a[1])
-        area_b = (b[2] - b[0]) * (b[3] - b[1])
-        return inter / (area_a + area_b - inter)
-
-    @staticmethod
-    def _nms(detections: list[dict], threshold: float = 0.1) -> list[dict]:
-        """IoU-based NMS on the bbox_page field."""
-        kept: list[dict] = []
-        for det in sorted(detections, key=lambda d: d["confidence"], reverse=True):
-            bb = det["bbox_page"]
-            if not any(BaseYOLOAgent._iou(bb, k["bbox_page"]) > threshold for k in kept):
-                kept.append(det)
-        return kept

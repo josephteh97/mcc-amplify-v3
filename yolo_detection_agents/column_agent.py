@@ -18,17 +18,12 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
-import io
-import json
 import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import numpy as np
-from PIL import Image
 
 from .base_yolo_agent import BaseYOLOAgent
 
@@ -36,9 +31,8 @@ from .base_yolo_agent import BaseYOLOAgent
 # ── Default weights path (relative to this file's directory) ──────────────────
 _WEIGHTS_DEFAULT = Path(__file__).parent / "weights" / "column-detect.pt"
 
-_AGENT_DIR       = Path(__file__).parent
-DB_PATH          = _AGENT_DIR / "detections.db"
-MEMORY_JSON_PATH = _AGENT_DIR / "memory.json"
+_AGENT_DIR = Path(__file__).parent
+DB_PATH    = _AGENT_DIR / "detections.db"
 
 
 # ── YOLO class name → canonical shape mapping ─────────────────────────────────
@@ -47,10 +41,6 @@ MEMORY_JSON_PATH = _AGENT_DIR / "memory.json"
 _CLASS_TO_SHAPE: dict[str, str] = {
     "column": "square",  # shape/type resolved downstream by OCR
 }
-
-# Aspect-ratio fallback when class name doesn't encode shape
-_ROUND_RATIO_MAX  = 0.15   # |w-h|/(w+h) below this → round
-_RECT_RATIO_MIN   = 0.25   # |w-h|/(w+h) above this → rectangle
 
 # Post-inference filters (calibrated from inspect_detections.ipynb at 300 DPI, 1:400 scale)
 _FINAL_CONF      = 0.90   # keep only high-confidence detections after tiling
@@ -130,13 +120,7 @@ class YOLOColumnAgent(BaseYOLOAgent):
         for raw in raw_detections:
             class_name = raw["type"].lower()
             shape = _CLASS_TO_SHAPE.get(class_name)
-
             if shape is None:
-                if "col" in class_name:
-                    shape = _infer_shape_from_bbox(raw["bbox"])
-                else:
-                    continue
-            if shape == "_skip":
                 continue
 
             x1, y1, x2, y2 = raw["bbox"]
@@ -187,23 +171,6 @@ class YOLOColumnAgent(BaseYOLOAgent):
             ]
 
         return candidates
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Shape inference from bounding-box geometry
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _infer_shape_from_bbox(bbox: list[float]) -> str:
-    """Guess column shape from bbox aspect ratio when class name is ambiguous."""
-    x1, y1, x2, y2 = bbox
-    w = max(x2 - x1, 1e-6)
-    h = max(y2 - y1, 1e-6)
-    ratio = abs(w - h) / (w + h)
-    if ratio < _ROUND_RATIO_MAX:
-        return "round"
-    if ratio > _RECT_RATIO_MIN:
-        return "rectangle"
-    return "square"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
