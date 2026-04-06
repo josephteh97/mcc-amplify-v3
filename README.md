@@ -9,244 +9,40 @@ Built for Main Contractor DfMA workflows under **Singapore SS CP 65 / BCA DfMA A
 ## Agentic Workflow
 
 ```mermaid
-flowchart TD
-    USER(["User Browser"])
+flowchart LR
+    PDF(["📄 PDF"])
 
-    subgraph FE["FRONTEND  (Vite · localhost:5173)"]
-        direction LR
-        UP["UploadPanel
-        ────────────────────────
-        Upload PDF · status poll
-        Download RVT / GLB"]
-        VW["Viewer
-        ────────────────────────
-        Three.js · GLB preview
-        Click-to-select elements"]
-        EP["EditPanel
-        ────────────────────────
-        Patch element geometry
-        Confirm / dismiss quarantine
-        Trigger rebuild"]
-        CP["ChatPanel
-        ────────────────────────
-        WebSocket AI supervisor
-        Ollama model selector"]
+    PDF --> GRID["Grid Detection\nAgent"]
+    PDF --> YOLO["YOLO Column\nAgent"]
+
+    GRID --> PARSE["detection_parser"]
+    YOLO --> PARSE
+
+    PARSE --> TRES["Type Resolver"]
+    TRES --> CEV["Cross-Element\nValidator"]
+
+    CEV -- "⚠️ suspicious" --> EP
+    CEV --> VAL["Validation\nAgent"]
+
+    VAL -- "fatal rule breach" --> ABORT(["❌ Abort"])
+    VAL --> TRANS["BIM-Translator\nAgent"]
+
+    TRANS -- "API error ×3" --> VAL
+    TRANS --> REVIT["Revit Add-in\nWindows"]
+    TRANS --> GLTF["glTF Exporter"]
+
+    REVIT --> RVT(["✅ .rvt"])
+    GLTF  --> GLB(["✅ .glb"])
+
+    RVT & GLB --> UI["Frontend\nReact + Three.js"]
+
+    subgraph UI["Frontend  ·  React + Three.js"]
+        EP["Edit Panel"]
+        VW["3D Viewer"]
+        CHAT["AI Chat"]
     end
 
-    subgraph BE["BACKEND API  (FastAPI · localhost:8000)"]
-        direction LR
-        REST["REST
-        ──────────────────────────────────
-        POST  /api/upload
-        POST  /api/process/{id}
-        GET   /api/status/{id}
-        GET   /api/download/rvt|gltf/{id}
-        GET|PUT /api/project_profile
-        GET   /api/model/{id}/recipe
-        PATCH /api/model/{id}/recipe
-        POST  /api/rebuild/{id}"]
-        WS["WebSocket
-        ──────────────────────────────────
-        WS /ws/chat/{user_id}
-        Ollama fallback chain:
-        Qwen3.5 → Llama3.1 → Qwen2.5
-        Job context injected per turn"]
-    end
-
-    subgraph DETECT["STAGE 1 — Detection  (ThreadPoolExecutor · parallel)"]
-        direction LR
-        GA["Grid Detection Agent
-        grid-detection-agent/agent.py
-        ──────────────────────────────
-        Render PDF → SEA-LION vision
-        Margin scan & reconcile
-        Memory: grid_memory.db
-        ──────────────────────────────
-        → vertical_labels
-          horizontal_labels
-          confidence"]
-
-        CA["YOLO Column Agent
-        yolo_detection_agents/column_agent.py
-        ──────────────────────────────
-        YOLOv11 · column-detect.pt
-        Tiled 1280×1280 · torchvision NMS
-        Single class · page image cached
-        Memory: detections.db
-        ──────────────────────────────
-        → detections[]  bbox_page"]
-    end
-
-    PARSE["detection_parser  (controller.py)
-    ──────────────────────────────────────────
-    Merge both outputs → Raw Geometry JSON
-    Inherit job_id · derive feature_signature"]
-
-    subgraph RESOLVE["STAGE 1b — Type Resolution  (type_resolution_agents/)"]
-        direction LR
-        TR["ColumnTypeResolver
-        ──────────────────────────────────
-        1. OCR scan — tag adjacent to element
-        2. Geometric — Hough circle · aspect ratio
-           → est_width_mm  est_depth_mm
-        3. Cluster — propagate label within group
-        4. Spatial k-NN — inherit from neighbours
-        5. Synthetic — GROUP_A / B / C fallback
-        ──────────────────────────────────
-        → type_mark · shape · resolution_method
-          resolution_confidence"]
-    end
-
-    subgraph CROSSVAL["STAGE 1c — Cross-Element Validation  (cross_element_validator/)"]
-        direction LR
-        CV["CrossElementValidator
-        ──────────────────────────────────
-        ① Geometric plausibility
-           bbox squareness vs element type
-        ② Overlap conflict
-           cross-type IoU  (column vs wall)
-        ③ Grid intersection
-           distance penalty from nearest node
-        ④ Neighbourhood consensus
-           spatial outlier in column grid
-        ──────────────────────────────────
-        Plausibility score per detection
-        Low score → quarantine (non-blocking)"]
-    end
-
-    QUAR(["Quarantined detections
-    ─────────────────────────
-    Suspicious / misclassified
-    Flagged for human review"])
-
-    subgraph VAL["STAGE 2 — Validation Agent  (validation/)"]
-        direction LR
-        MEM_V{{"@memory_first
-        validation/memory.sqlite"}}
-        VTOOLS["geometry_checker
-        ────────────────────
-        G1  Grid confidence ≥ 0.75
-        G2  Both V + H axes present
-        C1  Known column shape
-        C2  Section 200 – 1500 mm
-        C3  Centre coords present
-        D1  No duplicate locations
-        W1  Wall thickness DfMA
-        W2  Non-zero wall length
-
-        loop_closer
-        ────────────────────
-        Snap open endpoints ≤ 10 px
-
-        standard_thickness_lookup
-        ────────────────────
-        SS CP 65 / BCA DfMA 2021"]
-        VM[("validation/memory.sqlite
-        ─────────────────────
-        conflict_resolutions
-        validation_runs")]
-    end
-
-    FATAL{{"Fatal geometry?
-    C3 or W2"}}
-
-    subgraph TRANS["STAGE 3 — BIM-Translator Agent  (translator/)"]
-        direction LR
-        MEM_T{{"@memory_first
-        translator/memory.sqlite"}}
-        TTOOLS["coordinate_transformer
-        ─────────────────────────────
-        Pixel → world mm
-        Grid-derived scale
-        Snap to grid intersections
-
-        revit_schema_mapper
-        ─────────────────────────────
-        Levels · Grids · Walls
-        Columns · Doors · Windows
-        Floors · Ceilings
-
-        revit_api_client
-        ─────────────────────────────
-        POST /build-model  (port 5000)
-        Capture C# warnings
-        Self-correction loop ×3"]
-        TM[("translator/memory.sqlite
-        ─────────────────────────────
-        api_success_patterns
-        translation_runs")]
-    end
-
-    RETRY{{"Retries
-    exhausted? (×3)"}}
-
-    REVAL["STAGE 3b — Re-Validation
-    ────────────────────────────────────
-    New ValidationAgent()
-    Translator error + hint injected"]
-
-    subgraph REVIT["REVIT ADD-IN  (Windows · port 5000)"]
-        direction LR
-        SVC["RevitService/ApiServer.cs
-        ────────────────────────
-        POST /build-model
-        Returns raw .rvt bytes"]
-        MB["RevitService/ModelBuilder.cs
-        ────────────────────────
-        New Revit document
-        Levels → Grids → Walls
-        Columns → Doors → Windows
-        → C:\\RevitOutput\\{id}.rvt"]
-    end
-
-    GLTF["glTF Exporter  (gltf_exporter.py)
-    ──────────────────────────────────────────
-    Transaction JSON → trimesh meshes
-    mm → m · element naming for viewer
-    → data/models/gltf/{job_id}.glb"]
-
-    RVT(["data/models/rvt/{job_id}.rvt
-    C:\\RevitOutput\\{job_id}.rvt"])
-    GLB(["data/models/gltf/{job_id}.glb"])
-    ABORT(["Pipeline Abort
-    Returns error_log"])
-
-    USER --> UP & CP
-    UP -- "POST /api/upload\nPOST /api/process" --> REST
-    CP <--> WS
-    EP -- "PATCH recipe\nPOST rebuild" --> REST
-    REST -- "background thread\n_run_pipeline_bg()" --> DETECT
-    GA & CA --> PARSE
-    PARSE --> TR
-    TR --> CV
-    CV -- "quarantined detections" --> QUAR
-    CV --> MEM_V --> VTOOLS --> VM
-    VTOOLS --> FATAL
-    FATAL -- "No" --> MEM_T --> TTOOLS --> TM
-    FATAL -- "Yes" --> ABORT
-    TTOOLS --> RETRY
-    RETRY -- "No" --> SVC --> MB --> RVT
-    RETRY -- "Yes" --> REVAL --> MEM_T
-    MB --> GLTF --> GLB
-    VW -- "Select element" --> EP
-    QUAR -- "review in" --> EP
-    RVT --> REST
-    GLB --> REST
-    REST -- "GET /api/download/rvt" --> UP
-    REST -- "GET /api/download/gltf" --> VW
-
-    style FE      fill:#1a2a4a,color:#fff,stroke:#4a9eff
-    style BE      fill:#1a1a3a,color:#fff,stroke:#8a8aff
-    style DETECT  fill:#1a3a5c,color:#fff,stroke:#4adeff
-    style RESOLVE fill:#1a2a3a,color:#fff,stroke:#4ab8ff
-    style CROSSVAL fill:#1a2a2a,color:#fff,stroke:#4affd4
-    style VAL     fill:#1a3a2c,color:#fff,stroke:#4aff9e
-    style TRANS   fill:#3a1a2c,color:#fff,stroke:#ff4a9e
-    style REVIT   fill:#3a2a1a,color:#fff,stroke:#ffaa4a
-    style PARSE   fill:#2a2a3a,color:#fff,stroke:#9abaff
-    style GLTF    fill:#2a2a3a,color:#fff,stroke:#9abaff
-    style REVAL   fill:#2a3a3a,color:#fff,stroke:#4affde
-    style QUAR    fill:#3a2a1a,color:#fff,stroke:#ffdd4a
+    EP -- "edit + rebuild" --> PARSE
 ```
 
 ---
