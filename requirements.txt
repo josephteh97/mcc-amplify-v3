@@ -1,19 +1,25 @@
+# Python==12.0.0
+
 # grid-detection-agent
 pdf2image==1.17.0
-Pillow
-requests
+Pillow==12.1.1
+requests==2.33.0
 
 # gltf exporter
-trimesh
-numpy
+trimesh==4.11.5
+numpy==2.4.4
 
 # yolo detection agents
 # Install PyTorch with CUDA: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.5.1+cu121
-torchvision>=0.20.0
-ultralytics>=8.3.0
-pymupdf>=1.24.0
+torchvision==0.20.1+cu121
+ultralytics==8.4.33
+pymupdf==1.27.2.2
+
+pyyaml==6.0.3
+scipy==1.17.1
+matplotlib==3.10.8
 
 # type resolution agents
 pytesseract>=0.3.10
@@ -23,3 +29,4 @@ chardet==7.4.0.post2
 charset-normalizer==3.4.6
 
 mkl-service==2.6.1
+ultralytics==8.4.33
