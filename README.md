@@ -69,8 +69,8 @@ flowchart TD
         yolo_detection_agents/column_agent.py
         ──────────────────────────────
         YOLOv11 · column-detect.pt
-        CLAHE contrast · NMS post-process
-        Shapes: square / rect / round / i-beam
+        Tiled 1280×1280 · torchvision NMS
+        Single class → shape resolved by OCR
         Memory: detections.db
         ──────────────────────────────
         → detections[]  bbox_page  shape"]
@@ -130,7 +130,7 @@ flowchart TD
 
         revit_api_client
         ─────────────────────────────
-        POST port 5000 /api/build
+        POST /build-model  (port 5000)
         Capture C# warnings
         Self-correction loop ×3"]
         TM[("translator/memory.sqlite
@@ -213,7 +213,7 @@ Each agent is a **fully isolated unit** with its own private toolset and memory 
 | Agent | Directory | Private Tools | Private Memory | Responsibility |
 |---|---|---|---|---|
 | **Grid Detection** | `grid-detection-agent/` | `tools.py` — render, detect, verify, margin-scan | `grid_memory.db` | Extract structural grid labels from PDF |
-| **Column Detection** | `yolo_detection_agents/` | `column_agent.py` — YOLOv11 + CLAHE + NMS | `detections.db` | Detect column positions and shapes |
+| **Column Detection** | `yolo_detection_agents/` | `column_agent.py` — YOLOv11 + tiled sliding-window + torchvision NMS | `detections.db` | Detect column positions and shapes |
 | **Validation** | `validation/` | `geometry_checker`, `loop_closer`, `standard_thickness_lookup`, `memory_io` | `memory.sqlite` | DfMA rule enforcement + wall topology repair |
 | **BIM-Translator** | `translator/` | `coordinate_transformer`, `revit_schema_mapper`, `revit_api_client`, `memory_io` | `memory.sqlite` | Pixel→mm, Revit JSON mapping, API dispatch |
 
@@ -272,7 +272,7 @@ mcc-amplify-v3/
 │   └── tools.py               # PDF render, vision detect, zoom margin, memory CRUD
 │
 ├── yolo_detection_agents/     # Column detection (YOLOv11)
-│   ├── column_agent.py        # YOLOColumnAgent — CLAHE, NMS, 4-shape classification
+│   ├── column_agent.py        # YOLOColumnAgent — tiled sliding-window + torchvision NMS
 │   ├── base_yolo_agent.py     # Lazy model load, PDF render, inference
 │   └── weights/
 │       └── column-detect.pt   # Trained YOLOv11 weights

@@ -38,7 +38,7 @@ PDF upload
     → [Stage 3: BIM-Translator Agent]
         coordinate_transformer  (pixel → world mm, grid snap)
         revit_schema_mapper     (Transaction JSON)
-        revit_api_client        (POST localhost:5000/build, self-correct ×3)
+        revit_api_client        (POST localhost:5000/build-model, self-correct ×3)
         → translator/memory.sqlite
     → glTF Exporter            (Transaction JSON → .glb for 3D viewer)
   → .rvt saved on Windows at C:\RevitOutput\{job_id}.rvt
@@ -67,13 +67,13 @@ PDF upload
 | **Linux (dev)** | Python backend, YOLO, Ollama, FastAPI, frontend | `uvicorn backend.server:app --port 8000` |
 | **Windows (Revit server)** | Revit 2023 + C# Add-in HTTP server | `revit_server/csharp_service/build.bat` → port 5000 |
 
-**Connectivity:** Linux calls `http://<windows-ip>:5000/build` (not `localhost` unless WSL on same machine). Set:
+**Connectivity:** Linux calls `http://<windows-ip>:5000/build-model` (not `localhost` unless WSL on same machine). Set:
 ```bash
 export WINDOWS_REVIT_SERVER=http://<windows-ip>:5000
 export REVIT_SERVER_API_KEY=my-revit-key-2023   # must match config.json
 ```
 
-**Windows Revit endpoint:** `POST /build` (not `/api/build`). Responds with raw `.rvt` bytes.
+**Windows Revit endpoint:** `POST /build-model`. Responds with raw `.rvt` bytes.
 
 **Common issue:** `build.bat` polls port 49152 (raw socket) to confirm Revit started, but the HTTP API is on port 5000. `build.bat` reporting success does NOT mean port 5000 is ready. Verify with: `Invoke-WebRequest http://localhost:5000/health`.
 
@@ -96,7 +96,7 @@ export REVIT_SERVER_API_KEY=my-revit-key-2023   # must match config.json
 | `translator/agent.py` | BIMTranslatorAgent — self-correction loop ×3 |
 | `translator/tools.py` | coordinate_transformer, revit_schema_mapper, revit_api_client |
 | `translator/project_context.json` | Singapore DfMA defaults (bay widths, wall thickness, etc.) |
-| `revit_server/csharp_service/Program.cs` | Windows HTTP server — `POST /build` |
+| `revit_server/RevitService/ApiServer.cs` | Windows HTTP server — `POST /build-model` |
 | `revit_server/csharp_service/ModelBuilder.cs` | Builds Revit model from Transaction JSON |
 | `revit_server/csharp_service/config.json` | Port (5000), API key, CORS |
 | `revit_server/csharp_service/build.bat` | Build + deploy + launch Revit |
@@ -277,6 +277,6 @@ export REVIT_SERVER_API_KEY=my-revit-key-2023
 
 - **YOLO replaces SEA-LION for columns** — `pdf_detection_agent/` is archived; `yolo_detection_agents/column_agent.py` is active. Singleton instantiated at controller module load.
 - **job_id unified** — `server.py` now passes upload `job_id` to `controller.run_pipeline()`. Same UUID appears in `_jobs` dict, Linux `.rvt` path, and Windows `C:\RevitOutput\` path.
-- **Revit endpoint** — Windows C# server listens on `POST /build` (no `/api` prefix).
+- **Revit endpoint** — Windows C# server listens on `POST /build-model` (`revit_server/RevitService/ApiServer.cs`).
 - **glTF export** — Added `backend/gltf_exporter.py`; pipeline now produces `.glb` alongside `.rvt` for in-browser 3D preview.
 - **Frontend edit loop** — Users can click elements in the Three.js viewer → edit geometry in EditPanel → PATCH recipe → POST rebuild without re-running detection/validation.

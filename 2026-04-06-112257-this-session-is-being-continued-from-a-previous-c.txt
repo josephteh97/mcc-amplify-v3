@@ -1,0 +1,1277 @@
+ ▐▛███▜▌   Claude Code v2.1.90
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/Documents/mcc-amplify-v3
+
+✻ Conversation compacted (ctrl+o for history)
+
+  ⎿  You've hit your limit · resets 7pm (Asia/Singapore)
+     /upgrade or /extra-usage to finish what you’re working on.
+
+✻ Cooked for 3m 12s
+
+❯ /simplify                                                                     
+
+● Bash(git diff HEAD)
+  ⎿  (No output)
+
+● Bash(git log --oneline -5)
+  ⎿  9282b89 simplify
+     f296429 add optimize.md for claude
+     c43e248 remove extra context.txt file
+     … +2 lines (ctrl+o to expand)
+
+● Bash(git show --stat HEAD && git show HEAD)
+  ⎿  commit 9282b89c09bebb9c3a7c0de4918807c3f40654ad
+     Author: josephteh97 <1079183153@qq.com>
+     Date:   Thu Apr 2 17:58:20 2026 +0800
+     … +426 lines (ctrl+o to expand)
+
+  Read 2 files (ctrl+o to expand)
+
+● Now I have the full picture. Let me launch the three review agents in parallel
+   with the full file contents as context.
+
+● 3 Explore agents finished (ctrl+o to expand)
+   ├─ Code reuse review · 24 tool uses · 56.2k tokens
+   │  ⎿  Done
+   ├─ Code quality review · 6 tool uses · 25.8k tokens
+   │  ⎿  Done
+   └─ Efficiency review · 1 tool use · 15.3k tokens
+      ⎿  Done
+
+● All agents agree on 7 fixable issues. Applying them now:
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Added 11 lines
+      50  from PIL import Image
+      51  
+      52  
+      53 +# ── Required heavy imports ───────────────────────────────────
+         +──────────────────                                             
+      54 +                                                               
+      55 +import torch                                                   
+      56 +from torchvision.ops import nms as _torch_nms                  
+      57 +                                                               
+      58 +# ── Tiling constants (calibrated for 300 DPI, 1:400 scale floo
+         +r plans) ────────                                              
+      59 +                                                               
+      60 +_TILE_SIZE    = 1280   # px — matches YOLO training resolution 
+      61 +_TILE_OVERLAP = 200    # px — ensures columns on tile boundarie
+         +s are captured                                                 
+      62 +_NMS_IOU      = 0.45   # IoU threshold for cross-tile duplicate
+         + suppression                                                   
+      63 +                                                               
+      64  # ── Optional heavy imports (fail gracefully so tests can mock 
+          them) ────────────
+      65  
+      66  try:
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Added 10 lines, removed 22 lines
+      245          Returns raw dicts: {"type": str, "bbox": [x1,y1,x2,y2]
+           , "confidence": float}
+      246          All coordinates are in full-image pixel space.
+      247          """
+      248 -        try:                                                  
+      249 -            import torch                                      
+      250 -            from torchvision.ops import nms as _torch_nms     
+      251 -        except ImportError as exc:                            
+      252 -            raise ImportError(                                
+      253 -                "torchvision is required. Run: pip install tor
+          -chvision"                                                     
+      254 -            ) from exc                                        
+      255 -                                                              
+      256 -        _TILE_SIZE    = 1280                                  
+      257 -        _TILE_OVERLAP = 200                                   
+      258 -        _NMS_IOU      = 0.45                                  
+      259 -                                                              
+      248          W, H  = img.size
+      249          step  = _TILE_SIZE - _TILE_OVERLAP
+      250          boxes_all: list[list[float]] = []
+     ...
+      253  
+      254          for y0 in range(0, H, step):
+      255              for x0 in range(0, W, step):
+      268 -                x1 = min(x0 + _TILE_SIZE, W);  xa = x1 - _TILE
+          -_SIZE                                                         
+      269 -                y1 = min(y0 + _TILE_SIZE, H);  ya = y1 - _TILE
+          -_SIZE                                                         
+      256 +                x1 = min(x0 + _TILE_SIZE, W)                  
+      257 +                xa = x1 - _TILE_SIZE                          
+      258 +                y1 = min(y0 + _TILE_SIZE, H)                  
+      259 +                ya = y1 - _TILE_SIZE                          
+      260                  tile    = img.crop((xa, ya, x1, y1))
+      261                  results = self._model.predict(
+      262                      source=tile, imgsz=_TILE_SIZE,
+      263                      conf=self._conf_threshold, iou=_NMS_IOU,
+      264                      verbose=False,
+      265                  )[0]
+      276 -                for box, c, cls in zip(                       
+      277 -                    results.boxes.xyxy.cpu().numpy(),         
+      278 -                    results.boxes.conf.cpu().numpy(),         
+      279 -                    results.boxes.cls.cpu().numpy(),          
+      280 -                ):                                            
+      281 -                    boxes_all.append([box[0]+xa, box[1]+ya, bo
+          -x[2]+xa, box[3]+ya])                                          
+      282 -                    confs_all.append(float(c))                
+      283 -                    types_all.append(results.names[int(cls)]) 
+      266 +                # Single GPU→CPU transfer for all columns (xyx
+          +y, conf, cls in one Nx6 tensor)                               
+      267 +                data = results.boxes.data.cpu().numpy()       
+      268 +                for row in data:                              
+      269 +                    boxes_all.append([row[0] + xa, row[1] + ya
+          +, row[2] + xa, row[3] + ya])                                  
+      270 +                    confs_all.append(float(row[4]))           
+      271 +                    types_all.append(results.names[int(row[5])
+          +])                                                            
+      272  
+      273          if not boxes_all:
+      274              return []
+
+● Now remove the dead _enhance(), _iou(), and _nms() methods:
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Removed 15 lines
+      216              "or pdf2image (pip install pdf2image)."
+      217          )
+      218  
+      219 -    def _enhance(self, img: Image.Image) -> np.ndarray:       
+      220 -        """                                                   
+      221 -        CLAHE contrast enhancement in LAB colour space.       
+      222 -        Improves visibility of faint structural drawing lines 
+          -before inference.                                             
+      223 -        Falls back to plain numpy array if OpenCV is not avail
+          -able.                                                         
+      224 -        """                                                   
+      225 -        arr = np.array(img)  # HxWx3, uint8, RGB              
+      226 -        if not _CV2_AVAILABLE:                                
+      227 -            return arr                                        
+      228 -                                                              
+      229 -        lab   = _cv2.cvtColor(arr, _cv2.COLOR_RGB2LAB)        
+      230 -        clahe = _cv2.createCLAHE(clipLimit=3.0, tileGridSize=(
+          -8, 8))                                                        
+      231 -        lab[:, :, 0] = clahe.apply(lab[:, :, 0])              
+      232 -        return _cv2.cvtColor(lab, _cv2.COLOR_LAB2RGB)         
+      233 -                                                              
+      219      def _run_inference(self, img: Image.Image) -> list[dict]:
+      220          """
+      221          Tiled sliding-window inference.
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Removed 22 lines
+      275              for i in keep
+      276          ]
+      277  
+      278 -    # ── NMS utility (available to subclasses) ───────────────
+          -──────────────────                                            
+      279 -                                                              
+      280 -    @staticmethod                                             
+      281 -    def _iou(a: list[float], b: list[float]) -> float:        
+      282 -        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])           
+      283 -        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])           
+      284 -        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)     
+      285 -        if inter == 0:                                        
+      286 -            return 0.0                                        
+      287 -        area_a = (a[2] - a[0]) * (a[3] - a[1])                
+      288 -        area_b = (b[2] - b[0]) * (b[3] - b[1])                
+      289 -        return inter / (area_a + area_b - inter)              
+      290 -                                                              
+      291 -    @staticmethod                                             
+      292 -    def _nms(detections: list[dict], threshold: float = 0.1) -
+          -> list[dict]:                                                 
+      293 -        """IoU-based NMS on the bbox_page field."""           
+      294 -        kept: list[dict] = []                                 
+      295 -        for det in sorted(detections, key=lambda d: d["confide
+          -nce"], reverse=True):                                         
+      296 -            bb = det["bbox_page"]                             
+      297 -            if not any(BaseYOLOAgent._iou(bb, k["bbox_page"]) 
+          -> threshold for k in kept):                                   
+      298 -                kept.append(det)                              
+      299 -        return kept                                           
+
+● Now fix column_agent.py — remove dead constants, function, and unreachable
+  branch:
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Removed 4 lines
+      48      "column": "square",  # shape/type resolved downstream by OC
+          R
+      49  }
+      50  
+      51 -# Aspect-ratio fallback when class name doesn't encode shape   
+      52 -_ROUND_RATIO_MAX  = 0.15   # |w-h|/(w+h) below this → round    
+      53 -_RECT_RATIO_MIN   = 0.25   # |w-h|/(w+h) above this → rectangle
+      54 -                                                               
+      51  # Post-inference filters (calibrated from inspect_detections.ip
+          ynb at 300 DPI, 1:400 scale)
+      52  _FINAL_CONF      = 0.90   # keep only high-confidence detection
+          s after tiling
+      53  _MIN_SQUARENESS  = 0.70   # min(w,h)/max(w,h) — rejects lift sh
+          afts & elongated FPs
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Removed 6 lines
+      126          for raw in raw_detections:
+      127              class_name = raw["type"].lower()
+      128              shape = _CLASS_TO_SHAPE.get(class_name)
+      129 -                                                              
+      129              if shape is None:
+      131 -                if "col" in class_name:                       
+      132 -                    shape = _infer_shape_from_bbox(raw["bbox"]
+          -)                                                             
+      133 -                else:                                         
+      134 -                    continue                                  
+      135 -            if shape == "_skip":                              
+      130                  continue
+      131  
+      132              x1, y1, x2, y2 = raw["bbox"]
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Removed 17 lines
+      180  
+      181  
+      182  # ════════════════════════════════════════════════════════════
+           ══════════════════
+      183 -# Shape inference from bounding-box geometry                  
+      184 -# ════════════════════════════════════════════════════════════
+          -══════════════════                                            
+      185 -                                                              
+      186 -def _infer_shape_from_bbox(bbox: list[float]) -> str:         
+      187 -    """Guess column shape from bbox aspect ratio when class na
+          -me is ambiguous."""                                           
+      188 -    x1, y1, x2, y2 = bbox                                     
+      189 -    w = max(x2 - x1, 1e-6)                                    
+      190 -    h = max(y2 - y1, 1e-6)                                    
+      191 -    ratio = abs(w - h) / (w + h)                              
+      192 -    if ratio < _ROUND_RATIO_MAX:                              
+      193 -        return "round"                                        
+      194 -    if ratio > _RECT_RATIO_MIN:                               
+      195 -        return "rectangle"                                    
+      196 -    return "square"                                           
+      197 -                                                              
+      198 -                                                              
+      199 -# ════════════════════════════════════════════════════════════
+          -══════════════════                                            
+      183  # Memory persistence (same schema as pdf_detection_agent/agent
+           .py)
+      184  # Kept here so the rest of the agent is self-contained.
+      185  # ════════════════════════════════════════════════════════════
+           ══════════════════
+
+● Also need to remove the unused cv2 optional import since _enhance() was the
+  only caller:
+
+  Read 1 file (ctrl+o to expand)
+
+● cv2 was only used by _enhance(). Remove it and update the stale docstring
+  line:
+
+● Update(yolo_detection_agents/base_yolo_agent.py)  ⎿  Removed 1 line
+       4  Responsibilities:
+       5    • Load a YOLOv11 .pt weights file at construction time.
+       6    • Render a PDF page (or open an image) at a configurable DPI.
+       7 -  • Apply CLAHE contrast enhancement (improves faint engineerin
+         -g-drawing lines).                                              
+       7    • Run YOLO inference and return raw detections in pixel-space
+          .
+       8    • Expose a hook `_postprocess()` for subclasses to normalise 
+          detections into
+       9      the canonical mcc-amplify-v3 format expected by controller.
+          py.
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Removed 7 lines
+      63  # ── Optional heavy imports (fail gracefully so tests can mock 
+          them) ────────────
+      64  
+      65  try:
+      66 -    import cv2 as _cv2                                         
+      67 -    _CV2_AVAILABLE = True                                      
+      68 -except ImportError:                                            
+      69 -    _cv2 = None          # type: ignore                        
+      70 -    _CV2_AVAILABLE = False                                     
+      71 -                                                               
+      72 -try:                                                           
+      66      import fitz as _fitz  # PyMuPDF
+      67      _FITZ_AVAILABLE = True
+      68  except ImportError:
+
+● Also remove the unused import io (was likely for image byte buffers, not
+  referenced now):
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Update(yolo_detection_agents/base_yolo_agent.py)
+  ⎿  Removed 1 line
+      39  
+      40  from __future__ import annotations
+      41  
+      42 -import io                                                      
+      42  from abc import ABC, abstractmethod
+      43  from datetime import datetime
+      44  from pathlib import Path
+
+● Do the same check for column_agent.py — io and hashlib may be unused:
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Both unused — remove them:
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Removed 2 lines
+      18  
+      19  from __future__ import annotations
+      20  
+      21 -import hashlib                                                 
+      22 -import io                                                      
+      21  import json
+      22  import sqlite3
+      23  import uuid
+
+● Let me do a final read of both files to verify they're clean:
+
+  Read 2 files (ctrl+o to expand)
+
+● There's a trailing blank line at the end of base_yolo_agent.py (line 269).
+  Also json and Any and Image are imported in column_agent.py — let me verify
+  they're used:
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● json, Any, and Image are unused in column_agent.py:
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Removed 3 lines
+      18  
+      19  from __future__ import annotations
+      20  
+      21 -import json                                                    
+      21  import sqlite3
+      22  import uuid
+      23  from datetime import datetime
+      24  from pathlib import Path
+      26 -from typing import Any                                         
+      25  
+      26  import numpy as np
+      29 -from PIL import Image                                          
+      27  
+      28  from .base_yolo_agent import BaseYOLOAgent
+      29  
+
+● Also remove MEMORY_JSON_PATH — it's just a path constant that nothing uses:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● MEMORY_JSON_PATH in column_agent.py is unused — only the grid-detection-agent
+  uses its own copy. Remove it:
+
+● Update(yolo_detection_agents/column_agent.py)
+  ⎿  Added 2 lines, removed 3 lines
+      31  # ── Default weights path (relative to this file's directory) ─
+          ─────────────────
+      32  _WEIGHTS_DEFAULT = Path(__file__).parent / "weights" / "column-
+          detect.pt"
+      33  
+      34 -_AGENT_DIR       = Path(__file__).parent                       
+      35 -DB_PATH          = _AGENT_DIR / "detections.db"                
+      36 -MEMORY_JSON_PATH = _AGENT_DIR / "memory.json"                  
+      34 +_AGENT_DIR = Path(__file__).parent                             
+      35 +DB_PATH    = _AGENT_DIR / "detections.db"                      
+      36  
+      37  
+      38  # ── YOLO class name → canonical shape mapping ────────────────
+          ─────────────────
+
+● Now verify the final state of both files looks correct end-to-end:
+
+  Read 1 file (ctrl+o to expand)
+
+● Clean. Both files look good. Here's what was fixed:
+
+  base_yolo_agent.py
+  - torch / torchvision.ops.nms moved to module level (they're required deps,
+  not optional)
+  - _TILE_SIZE, _TILE_OVERLAP, _NMS_IOU promoted to module-level constants
+  - Semicolons x1 = ...; xa = ... split onto separate lines
+  - Triple .cpu().numpy() replaced with single results.boxes.data.cpu().numpy()
+  (one GPU→CPU transfer instead of three per tile)
+  - Dead _enhance(), _iou(), _nms() methods removed
+  - Dead cv2 optional import removed (only used by _enhance)
+  - Stale import io removed
+
+  column_agent.py
+  - Dead _infer_shape_from_bbox() function removed
+  - Dead _ROUND_RATIO_MAX / _RECT_RATIO_MIN constants removed
+  - Unreachable if shape is None: / if shape == "_skip": branches collapsed to a
+   single if shape is None: continue
+  - Dead MEMORY_JSON_PATH constant removed
+  - Unused import hashlib, import io, import json, from typing import Any, from 
+  PIL import Image removed
+
+✻ Cooked for 4m 13s
+
+❯ update the requirements.txt and tell me what are the things to update the     
+agentic worklfow diagram in README.md                                           
+
+  Read 2 files (ctrl+o to expand)
+
+● requirements.txt update: opencv-python-headless is now unused since cv2 was
+  only used by the deleted _enhance() method. Let me verify it's not used
+  elsewhere:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Confirmed — nothing uses cv2 anymore. Remove it:
+
+● Update(requirements.txt)
+  ⎿  Removed 1 line
+      11  # yolo detection agents
+      12  ultralytics>=8.3.0
+      13  torchvision>=0.16.0
+      14 -opencv-python-headless>=4.9.0                                  
+      14  pymupdf>=1.24.0
+
+● ---
+  Here are the three things to update in the diagram:
+
+  1. YOLO Column Agent node (line 72–73) — CLAHE removed, single class
+
+  Current:
+  CLAHE contrast · NMS post-process
+  Shapes: square / rect / round / i-beam
+  Should be:
+  Tiled 1280×1280 · torchvision NMS
+  Single class → shape resolved by OCR
+
+  2. revit_api_client inside TTOOLS node (line 133) — wrong endpoint
+
+  Current: POST port 5000 /api/build
+  Should be: POST /build (no /api prefix — confirmed in CLAUDE.md and
+  Program.cs)
+
+  3. Architecture table below the diagram (line 275) — stale CLAHE reference
+
+  Current: column_agent.py — YOLOv11 + CLAHE + NMS
+  Should be: column_agent.py — YOLOv11 + tiled sliding-window + torchvision NMS
+
+  Want me to apply these three edits to README.md now?
+
+❯   1. YOLO Column Agent node (line 72–73) — CLAHE removed, single class        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  Current:                                                                      
+                                                                                
+                                                                                
+  CLAHE contrast · NMS post-process                                             
+                                                                                
+                                                                                
+  Shapes: square / rect / round / i-beam                                        
+                                                                                
+                                                                                
+  Should be:                                                                    
+                                                                                
+                                                                                
+  Tiled 1280×1280 · torchvision NMS                                             
+                                                                                
+                                                                                
+  Single class → shape resolved by OCR                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  2. revit_api_client inside TTOOLS node (line 133) — wrong endpoint            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  Current: POST port 5000 /api/build                                            
+                                                                                
+                                                                                
+  Should be: POST /build (no /api prefix — confirmed in CLAUDE.md and           
+Program.cs)                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  3. Architecture table below the diagram (line 275) — stale CLAHE reference    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  Current: column_agent.py — YOLOv11 + CLAHE + NMS                              
+                                                                                
+                                                                                
+  Should be: column_agent.py — YOLOv11 + tiled sliding-window + torchvision NMS 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  Want me to apply these three edits to README.md now?      Yes, go ahead       
+● Update(README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      69          yolo_detection_agents/column_agent.py
+      70          ──────────────────────────────
+      71          YOLOv11 · column-detect.pt
+      72 -        CLAHE contrast · NMS post-process                      
+      73 -        Shapes: square / rect / round / i-beam                 
+      72 +        Tiled 1280×1280 · torchvision NMS                      
+      73 +        Single class → shape resolved by OCR                   
+      74          Memory: detections.db
+      75          ──────────────────────────────
+      76          → detections[]  bbox_page  shape"]
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      130  
+      131          revit_api_client
+      132          ─────────────────────────────
+      133 -        POST port 5000 /api/build                             
+      133 +        POST /build  (port 5000)                              
+      134          Capture C# warnings
+      135          Self-correction loop ×3"]
+      136          TM[("translator/memory.sqlite
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      213  | Agent | Directory | Private Tools | Private Memory | Respons
+           ibility |
+      214  |---|---|---|---|---|
+      215  | **Grid Detection** | `grid-detection-agent/` | `tools.py` — 
+           render, detect, verify, margin-scan | `grid_memory.db` | Extra
+           ct structural grid labels from PDF |
+      216 -| **Column Detection** | `yolo_detection_agents/` | `column_ag
+          -ent.py` — YOLOv11 + CLAHE + NMS | `detections.db` | Detect col
+          -umn positions and shapes |                                    
+      216 +| **Column Detection** | `yolo_detection_agents/` | `column_ag
+          +ent.py` — YOLOv11 + tiled sliding-window + torchvision NMS | `
+          +detections.db` | Detect column positions and shapes |         
+      217  | **Validation** | `validation/` | `geometry_checker`, `loop_c
+           loser`, `standard_thickness_lookup`, `memory_io` | `memory.sql
+           ite` | DfMA rule enforcement + wall topology repair |
+      218  | **BIM-Translator** | `translator/` | `coordinate_transformer
+           `, `revit_schema_mapper`, `revit_api_client`, `memory_io` | `m
+           emory.sqlite` | Pixel→mm, Revit JSON mapping, API dispatch |
+      219  
+
+● Done. All three edits applied.
+
+❯ /simplify                                                                     
+
+● Bash(git diff HEAD)
+  ⎿  diff --git a/README.md b/README.md
+     index 492d266..d7c4f6c 100644
+     --- a/README.md
+     … +28 lines (ctrl+o to expand)
+
+● The diff is purely documentation and config — no logic changes. Launching all
+  three agents in parallel:
+
+● 3 Explore agents finished (ctrl+o to expand)
+   ├─ Reuse review on diff · 30 tool uses · 43.8k tokens
+   │  ⎿  Done
+   ├─ Quality review on diff · 4 tool uses · 22.2k tokens
+   │  ⎿  Done
+   └─ Efficiency review on diff · 15 tool uses · 23.4k tokens
+      ⎿  Done
+
+● Two actionable findings: scipy unused in requirements.txt, and README.md:275
+  still has stale CLAHE/4-shape text. The reuse agent also flagged a possible
+  /build vs /build-model endpoint conflict — let me verify before touching
+  anything:
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● There's a real discrepancy — translator/tools.py calls /build-model but
+  Program.cs only handles /build. Let me check if Program.cs also routes
+  /build-model:
+
+  Searched for 4 patterns (ctrl+o to expand)
+
+● There are two C# implementations: csharp_service/Program.cs (active, /build)
+  and revit_server/RevitService/ (old, /build-model). The translator calls
+  /build-model — that's a bug against the active service. Let me also check what
+   csharp_service/Program.cs expects in the request body vs what the translator
+  sends:
+
+  Read 2 files (ctrl+o to expand)
+
+● The csharp_service/Program.cs is a skeleton — its Execute() just logs "YOUR
+  LOGIC HERE" and returns {"status":"QUEUED"}, not raw .rvt bytes. The real
+  implementation is RevitService/ApiServer.cs which handles /build-model and
+  returns raw .rvt bytes — exactly what translator/tools.py expects. So the
+  translator calling /build-model is correct; the README I updated last session
+  is the one that's wrong. Fixing all three issues now:
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      130  
+      131          revit_api_client
+      132          ─────────────────────────────
+      133 -        POST /build  (port 5000)                              
+      133 +        POST /build-model  (port 5000)                        
+      134          Capture C# warnings
+      135          Self-correction loop ×3"]
+      136          TM[("translator/memory.sqlite
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      272  │   └── tools.py               # PDF render, vision detect, zo
+           om margin, memory CRUD
+      273  │
+      274  ├── yolo_detection_agents/     # Column detection (YOLOv11)
+      275 -│   ├── column_agent.py        # YOLOColumnAgent — CLAHE, NMS,
+          - 4-shape classification                                       
+      275 +│   ├── column_agent.py        # YOLOColumnAgent — tiled slidi
+          +ng-window + torchvision NMS                                   
+      276  │   ├── base_yolo_agent.py     # Lazy model load, PDF render, 
+           inference
+      277  │   └── weights/
+      278  │       └── column-detect.pt   # Trained YOLOv11 weights
+
+● Update(requirements.txt)
+  ⎿  Removed 1 line
+       6  # gltf exporter
+       7  trimesh
+       8  numpy
+       9 -scipy                                                          
+       9  
+      10  # yolo detection agents
+      11  ultralytics>=8.3.0
+
+● Also fix the stale /build reference in CLAUDE.md which misidentifies the
+  active endpoint:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      38      → [Stage 3: BIM-Translator Agent]
+      39          coordinate_transformer  (pixel → world mm, grid snap)
+      40          revit_schema_mapper     (Transaction JSON)
+      41 -        revit_api_client        (POST localhost:5000/build, sel
+         -f-correct ×3)                                                  
+      41 +        revit_api_client        (POST localhost:5000/build-mode
+         +l, self-correct ×3)                                            
+      42          → translator/memory.sqlite
+      43      → glTF Exporter            (Transaction JSON → .glb for 3D 
+          viewer)
+      44    → .rvt saved on Windows at C:\RevitOutput\{job_id}.rvt
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      67  | **Linux (dev)** | Python backend, YOLO, Ollama, FastAPI, fron
+          tend | `uvicorn backend.server:app --port 8000` |
+      68  | **Windows (Revit server)** | Revit 2023 + C# Add-in HTTP serv
+          er | `revit_server/csharp_service/build.bat` → port 5000 |
+      69  
+      70 -**Connectivity:** Linux calls `http://<windows-ip>:5000/build` 
+         -(not `localhost` unless WSL on same machine). Set:             
+      70 +**Connectivity:** Linux calls `http://<windows-ip>:5000/build-m
+         +odel` (not `localhost` unless WSL on same machine). Set:       
+      71  ```bash
+      72  export WINDOWS_REVIT_SERVER=http://<windows-ip>:5000
+      73  export REVIT_SERVER_API_KEY=my-revit-key-2023   # must match co
+          nfig.json
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      73  export REVIT_SERVER_API_KEY=my-revit-key-2023   # must match co
+          nfig.json
+      74  ```
+      75  
+      76 -**Windows Revit endpoint:** `POST /build` (not `/api/build`). R
+         -esponds with raw `.rvt` bytes.                                 
+      76 +**Windows Revit endpoint:** `POST /build-model`. Responds with 
+         +raw `.rvt` bytes.                                              
+      77  
+      78  **Common issue:** `build.bat` polls port 49152 (raw socket) to 
+          confirm Revit started, but the HTTP API is on port 5000. `build
+          .bat` reporting success does NOT mean port 5000 is ready. Verif
+          y with: `Invoke-WebRequest http://localhost:5000/health`.
+      79  
+
+● Update(CLAUDE.md)  ⎿  Added 1 line, removed 1 line
+       96  | `translator/agent.py` | BIMTranslatorAgent — self-correction
+            loop ×3 |
+       97  | `translator/tools.py` | coordinate_transformer, revit_schema
+           _mapper, revit_api_client |
+       98  | `translator/project_context.json` | Singapore DfMA defaults 
+           (bay widths, wall thickness, etc.) |
+       99 -| `revit_server/csharp_service/Program.cs` | Windows HTTP serv
+          -er — `POST /build` |                                          
+       99 +| `revit_server/RevitService/ApiServer.cs` | Windows HTTP serv
+          +er — `POST /build-model` |                                    
+      100  | `revit_server/csharp_service/ModelBuilder.cs` | Builds Revit
+            model from Transaction JSON |
+      101  | `revit_server/csharp_service/config.json` | Port (5000), API
+            key, CORS |
+      102  | `revit_server/csharp_service/build.bat` | Build + deploy + l
+           aunch Revit |
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      277  
+      278  - **YOLO replaces SEA-LION for columns** — `pdf_detection_agen
+           t/` is archived; `yolo_detection_agents/column_agent.py` is ac
+           tive. Singleton instantiated at controller module load.
+      279  - **job_id unified** — `server.py` now passes upload `job_id` 
+           to `controller.run_pipeline()`. Same UUID appears in `_jobs` d
+           ict, Linux `.rvt` path, and Windows `C:\RevitOutput\` path.
+      280 -- **Revit endpoint** — Windows C# server listens on `POST /bui
+          -ld` (no `/api` prefix).                                       
+      280 +- **Revit endpoint** — Windows C# server listens on `POST /bui
+          +ld-model` (`revit_server/RevitService/ApiServer.cs`).         
+      281  - **glTF export** — Added `backend/gltf_exporter.py`; pipeline
+            now produces `.glb` alongside `.rvt` for in-browser 3D previe
+           w.
+      282  - **Frontend edit loop** — Users can click elements in the Thr
+           ee.js viewer → edit geometry in EditPanel → PATCH recipe → POS
+           T rebuild without re-running detection/validation.
+
+● Fixed:
+
+  - requirements.txt — removed scipy (not imported anywhere)
+  - README.md:275 — column_agent.py description: removed stale "CLAHE, NMS,
+  4-shape classification"
+  - README.md flowchart — endpoint corrected from POST /build → POST 
+  /build-model (matches what translator/tools.py actually calls and
+  RevitService/ApiServer.cs handles; csharp_service/Program.cs is an unfinished
+  stub with "YOUR LOGIC HERE")
+  - CLAUDE.md — corrected all four /build references to /build-model, and
+  updated the Key Files table to point to RevitService/ApiServer.cs (the real
+  active server) instead of csharp_service/Program.cs
+
+✻ Churned for 2m 36s
+
+❯ I have a question on the YOLO detection agent. Now, we know that it is a      
+per-element detection agent and thus, there are "column agent", "wall agent",   
+"beam agent", etc. But we have to bear in mind that in each element, there are  
+various types. For example, in column element, we have round column,            
+rectangular column, I beam column, and some various combined version as types.  
+I want to discuss with you that, l hope the YOLO detection agent is only        
+responsible for detecting the correct type and next, the other algorithm or     
+agent for example OCR or vision comparator who will based on the various type   
+to identify the speific type of this element being detected. By doing so, we    
+can reduce the training difficulty of YOLO v11. What do you think? Do you have  
+any advice to me?                                                               
+
+● Your instinct is right, and it aligns with what the codebase already partially
+   implements. Let me give you a structured view.
+
+  The Two-Stage Pattern You're Describing
+
+  Stage 1 — YOLO (spatial detection)
+    "Is there a column at this location?"
+    Output: bbox, confidence — nothing else
+
+  Stage 2 — Type Resolution (classification)
+    "What kind of column is this?"
+    Output: shape, width_mm, depth_mm, type_mark
+
+  This is the correct split. YOLO is optimised for "find where objects are" — it
+   struggles with fine-grained visual differences (round vs rectangular vs
+  I-beam at 24px) because those differences are subtle relative to the detection
+   task. Asking YOLO to do both jobs increases training complexity for
+  diminishing return.
+
+  ---
+  Why Your Approach Reduces Training Difficulty
+
+  ┌─────────────┬──────────────────────────┬────────────┬───────────────────┐
+  │             │                          │ Training   │   Generalises     │
+  │  Approach   │      Classes needed      │  images    │  across drawing   │
+  │             │                          │   needed   │      styles?      │
+  ├─────────────┼──────────────────────────┼────────────┼───────────────────┤
+  │             │ column_round,            │            │ Poorly — symbol   │
+  │ YOLO does   │ column_rect,             │ ~200–500   │ style varies by   │
+  │ everything  │ column_ibeam,            │ per class  │ firm              │
+  │             │ column_combined...       │            │                   │
+  ├─────────────┼──────────────────────────┼────────────┼───────────────────┤
+  │ YOLO        │                          │            │ Well — all        │
+  │ detects     │ column                   │ ~200–500   │ columns look like │
+  │ only        │                          │ total      │  small squares in │
+  │             │                          │            │  plan view        │
+  └─────────────┴──────────────────────────┴────────────┴───────────────────┘
+
+  The column symbol in plan view (the small cross-hatched or shaded
+  square/circle) looks nearly identical across all types at detection scale. The
+   type is encoded in the tag label next to it (C1, C2...) or in a schedule 
+  table elsewhere on the drawing — neither of which YOLO is suited to read.
+
+  ---
+  My Recommendation: OCR + Schedule Lookup
+
+  For Singapore structural drawings specifically, the reliable approach is:
+
+  YOLO → bbox of column symbol
+    ↓
+  OCR Agent: scan a small radius around the bbox for a type mark ("C1", "C2",
+  "SC1"...)
+    ↓
+  Schedule Lookup: find the column schedule table on the drawing (usually a
+  separate page or inset)
+    Map: C1 → rectangular 800×800mm, C2 → circular dia 600mm, etc.
+    ↓
+  Type Resolution: populate shape, width_mm, depth_mm, diameter_mm, type_mark
+
+  Fallback when no tag is found: geometric analysis on the cropped bbox region —
+   Hough circle transform to detect circular, contour aspect ratio for
+  rectangular vs I-beam. This is classical CV, no model needed.
+
+  This is also exactly what v1 (mcc-amplify-ai) did, so you have ground truth to
+   seed from.
+
+  ---
+  What the Codebase Already Has Ready
+
+  The canonical detection dict already has the slots for this:
+
+  {
+      "shape":       "square",   # ← YOLO placeholder, overwritten by type 
+  resolver
+      "type_mark":   None,       # ← OCR fills this (e.g. "C1")
+      "width_mm":    None,       # ← schedule lookup fills this
+      "depth_mm":    None,
+      "diameter_mm": None,
+  }
+
+  notes: "yolo:column" signals that the shape is unresolved. The type resolver
+  would update notes to something like "ocr:C1" or "geometric:circular" to
+  record which method resolved it.
+
+  ---
+  Suggested Agent Structure
+
+  yolo_detection_agents/
+    column_agent.py          ← already done (single class)
+    wall_agent.py            ← future (single class: "wall")
+    beam_agent.py            ← future (single class: "beam")
+
+  type_resolution_agents/
+    column_type_resolver.py  ← NEW: OCR tag scan + schedule lookup + geometric
+  fallback
+    wall_type_resolver.py    ← future
+
+  The controller calls the YOLO agent first (fast, parallelisable), then passes
+  all detections to the type resolver in a second pass. This keeps the two
+  concerns cleanly separated and lets you improve the resolver independently
+  without touching YOLO.
+
+  ---
+  One Caution
+
+  OCR around the bbox needs care — column tags are small and close together in
+  dense grids. A naive radius scan will pick up adjacent column tags. The
+  reliable approach is to scan in the quadrant direction away from the nearest 
+  grid intersection (columns are tagged on their less-crowded side), or to use
+  the grid geometry already detected in Stage 1 to constrain the search region.
+
+  The architecture is sound. The hardest part will be the schedule table
+  extraction (it may be on a different page, or embedded as an image), not the
+  per-column OCR.
+
+✻ Cooked for 48s
+
+❯ Stage 2 — Type Resolution (classification)                                    
+                                                                                
+                                                                                
+    "What kind of column is this?"                                              
+                                                                                
+                                                                                
+    Output: shape, width_mm, depth_mm, type_mark     I am wondering who is      
+doing stage 2. Now, we might now always have information lookup. In             
+construction practice, things are not standardized. during fallback, l need to  
+resolver to look at the detected geometry and identify the shape, then          
+ultimately find out the type of this element. for example, they might miss the  
+annoatation "C1" but the neibouring are all the same and one of it is labelled  
+as "C1" and thus, by default all the neighbouring are the same types.  Could we 
+ add this capbability if you understand what l say so as to increase the        
+intelligence level of system.                                                   
+
+● Yes, I understand exactly what you're describing. This is label propagation 
+  with spatial context — a well-established pattern in semi-supervised learning.
+   Here's how I'd design the resolver to handle the full real-world degradation
+  cascade:
+
+  ---
+  The Intelligence Model
+
+  The key insight is: a column drawing has two independent information sources
+  that can cross-validate each other:
+
+  Source A — Visual geometry     (what the bbox looks like)
+  Source B — Annotation text     (what the drafter wrote near it)
+
+  Neither is always present. A smart resolver uses both, and when one is
+  missing, it infers from spatial context. The hierarchy is:
+
+  1. Direct OCR          — tag found adjacent to this column         → highest
+  trust
+  2. Schedule lookup     — tag maps to explicit dimensions           → highest
+  trust
+  3. Geometric analysis  — measure the cropped symbol visually       → medium
+  trust
+  4. Spatial propagation — infer from labelled/measured neighbours   → medium
+  trust
+  5. Visual clustering   — group unlabelled by appearance similarity → lowest
+  trust, but better than unknown
+
+  ---
+  Spatial Propagation — The New Capability
+
+  This is the specific intelligence you want to add:
+
+  All detected columns after OCR pass:
+    [C1✓] [C1✓] [  ?] [C1✓]
+    [C2✓] [  ?] [  ?] [C2✓]
+    [C1✓] [C1✓] [  ?] [  ?]
+
+  Step 1 — Geometric fingerprint each column
+    Each bbox → (width_px, height_px, aspect_ratio, is_circular)
+    This is the "shape signature" independent of any label
+
+  Step 2 — Cluster by shape signature
+    Columns with similar (width_px ± tolerance, height_px ± tolerance)
+    are likely the same structural type
+
+  Step 3 — Label propagation within each cluster
+    If ≥60% of a cluster's members have the same OCR tag → assign to all
+
+  Step 4 — Spatial proximity propagation
+    For any remaining unlabelled column:
+    find k nearest neighbours (by grid distance, not pixel distance)
+    if majority of neighbours share a type AND shapes match → inherit that type
+
+  Result:
+    [C1✓] [C1✓] [C1←] [C1✓]
+    [C2✓] [C2←] [C2←] [C2✓]
+    [C1✓] [C1✓] [C1←] [C1←]
+
+  ---
+  Geometric Shape Analysis (Visual Geometry Fallback)
+
+  When no labels exist at all, the resolver looks at what it can measure:
+
+  # From the cropped bbox region:
+  1. Hough circle transform → is_circular (round column)
+  2. Contour analysis       → aspect ratio (square vs rect)
+  3. Edge pattern           → I-beam cross (distinctive flange pattern)
+  4. bbox_px × scale_mm_per_px → estimated width_mm, depth_mm
+
+  # Scale is already known from Stage 1 grid detection:
+  # scale = grid_bay_width_mm / grid_bay_width_px
+
+  This gives you approximate dimensions even without any annotation.
+
+  ---
+  Proposed Architecture
+
+  type_resolution_agents/
+    column_type_resolver.py
+
+      resolve(detections, page_image, grid_result) → enriched_detections
+
+      Internal pipeline:
+        _ocr_scan(det, page_image)         → type_mark or None
+        _geometric_fingerprint(det, scale) → {shape, est_width_mm, est_depth_mm}
+        _build_shape_clusters(detections)  → cluster_id per detection
+        _propagate_labels(detections)      → fill type_mark from cluster
+  majority
+        _spatial_propagate(detections)     → fill remaining from k-NN
+        _assign_synthetic_types(detections)→ "TYPE_A", "TYPE_B" for fully
+  unlabelled clusters
+
+  Each resolved detection gains two extra fields:
+
+  {
+      # ... existing fields ...
+      "type_mark":         "C1",           # or "TYPE_A" if synthetic
+      "resolution_method": "ocr:propagated",  # audit trail
+      "resolution_confidence": 0.82,
+  }
+
+  resolution_method values:
+
+  ┌──────────────────────┬───────────────────────────────────────────────────┐
+  │        Value         │                      Meaning                      │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "ocr:direct"         │ Tag found adjacent to this exact column           │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "ocr:schedule"       │ Tag found + schedule table looked up              │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "geometric"          │ Shape/size derived from visual measurement        │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "propagated:cluster" │ Inherited from cluster majority                   │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "propagated:spatial" │ Inherited from k nearest neighbours               │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ "synthetic"          │ No label found; assigned GROUP_A/B/C by           │
+  │                      │ appearance                                        │
+  └──────────────────────┴───────────────────────────────────────────────────┘
+
+  ---
+  Why resolution_method Matters Downstream
+
+  The validation agent and translator can weight their trust accordingly:
+
+  # In validation/tools.py geometry_checker:
+  if det["resolution_confidence"] < 0.6:
+      flag as "low-confidence type assignment — verify against structural 
+  drawings"
+
+  # In translator/tools.py revit_schema_mapper:
+  if det["resolution_method"].startswith("synthetic"):
+      use default_column_size_mm from project_context.json
+      add to warnings list for human review
+
+  ---
+  One Practical Note on the Propagation Threshold
+
+  The 60% cluster majority is a tunable constant. In real drawings you'll see:
+  - Perimeter frames: uniform column type → propagation works perfectly
+  - Transfer structures: mixed types intentionally → propagation should not
+  override, just suggest
+  - Plant rooms / cores: irregular shapes → geometric analysis is more reliable
+  than propagation
+
+  The resolver should never overwrite a direct OCR result — propagation only
+  fills None slots.
+
+  ---
+  Summary of What to Build
+
+  ┌──────────────┬────────────────────────────────────────────┬─────────────┐
+  │  Component   │                    File                    │ New/Existin │
+  │              │                                            │      g      │
+  ├──────────────┼────────────────────────────────────────────┼─────────────┤
+  │ OCR tag      │ type_resolution_agents/ocr_scanner.py      │ New         │
+  │ scanner      │                                            │             │
+  ├──────────────┼────────────────────────────────────────────┼─────────────┤
+  │ Geometric fi │ type_resolution_agents/geometry_fingerprin │ New         │
+  │ ngerprinter  │ t.py                                       │             │
+  ├──────────────┼────────────────────────────────────────────┼─────────────┤
+  │ Shape        │                                            │             │
+  │ cluster +    │ type_resolution_agents/label_propagator.py │ New         │
+  │ label        │                                            │             │
+  │ propagation  │                                            │             │
+  ├──────────────┼────────────────────────────────────────────┼─────────────┤
+  │ Column type  │ type_resolution_agents/column_type_resolve │             │
+  │ resolver (or │ r.py                                       │ New         │
+  │ chestrator)  │                                            │             │
+  ├──────────────┼────────────────────────────────────────────┼─────────────┤
+  │ Controller   │                                            │             │
+  │ wiring (call │ backend/controller.py                      │ Modify      │
+  │  after YOLO) │                                            │             │
+  └──────────────┴────────────────────────────────────────────┴─────────────┘
+
+  The resolver runs after YOLO detection and before the validation agent — it
+  enriches the detections in place so the rest of the pipeline sees fully
+  resolved types without knowing how they were resolved.
+
+  Want me to scaffold the code for any of these components?
+
+✻ Worked for 55s
+
+❯ Do you think each YOLO detection agent should have an independent resolver or 
+ we should only have one resolver to serve all the YOLO detection agent? you    
+know that elemnt are different and thus in the event that detected element has  
+unidentified type, we might have different strategy to deal with it. Also, what 
+ if YOLO detection is wrong, let say a wall recognized as column, is there a    
+backup to handle this case?                                                     
+
+● Two excellent architectural questions. Let me address both properly.
+
+  ---
+  Question 1: Per-element Resolver vs Shared Resolver
+
+  The answer is: both — through inheritance. This mirrors the pattern already in
+   your codebase.
+
+  BaseTypeResolver          ← shared algorithms live here
+    ├── ColumnTypeResolver  ← column-specific strategies
+    ├── WallTypeResolver    ← wall-specific strategies
+    └── BeamTypeResolver    ← beam-specific strategies
+
+  Exactly mirrors what you already have with BaseYOLOAgent → YOLOColumnAgent.
+
+  Why shared logic belongs in the base:
+
+  ┌─────────────────────────────────────────┬────────┬──────┬──────┐
+  │                Algorithm                │ Column │ Wall │ Beam │
+  ├─────────────────────────────────────────┼────────┼──────┼──────┤
+  │ OCR tag scan (nearby text)              │ ✓      │ ✓    │ ✓    │
+  ├─────────────────────────────────────────┼────────┼──────┼──────┤
+  │ Spatial propagation (label neighbours)  │ ✓      │ ✓    │ ✓    │
+  ├─────────────────────────────────────────┼────────┼──────┼──────┤
+  │ Visual clustering (group by appearance) │ ✓      │ ✓    │ ✓    │
+  ├─────────────────────────────────────────┼────────┼──────┼──────┤
+  │ Schedule table lookup                   │ ✓      │ ✓    │ ✓    │
+  └─────────────────────────────────────────┴────────┴──────┴──────┘
+
+  Why per-element subclasses are necessary:
+
+  ┌──────────────┬─────────────────┬────────────────────┬──────────────────┐
+  │   Strategy   │     Column      │        Wall        │       Beam       │
+  ├──────────────┼─────────────────┼────────────────────┼──────────────────┤
+  │              │                 │ Thickness          │                  │
+  │ Geometric    │ Hough circle +  │ measurement        │ Span direction + │
+  │ analysis     │ aspect ratio    │ (perpendicular     │  depth           │
+  │              │                 │ width)             │                  │
+  ├──────────────┼─────────────────┼────────────────────┼──────────────────┤
+  │ Fallback     │ Must be near a  │ Must connect two   │ Must span        │
+  │ heuristic    │ grid            │ endpoints          │ between two      │
+  │              │ intersection    │ (topology)         │ columns/walls    │
+  ├──────────────┼─────────────────┼────────────────────┼──────────────────┤
+  │ Annotation   │ "C1", "RC1",    │ "W1", or just a    │ "B1", or span    │
+  │ pattern      │ "SC1"           │ thickness          │ notation         │
+  │              │                 │ dimension "200"    │                  │
+  ├──────────────┼─────────────────┼────────────────────┼──────────────────┤
+  │              │                 │                    │ Long bbox        │
+  │ Plausibility │ Square-ish bbox │ Long thin bbox     │ between          │
+  │  check       │                 │                    │ structural       │
+  │              │                 │                    │ supports         │
+  └──────────────┴─────────────────┴────────────────────┴──────────────────┘
+
+  Wall type resolution is fundamentally topological — a wall's "type" depends on
+   what it connects to and its thickness, not just what it looks like in
+  isolation. That reasoning cannot live in the same strategy as column
+  resolution.
+
+  ---
+  Question 2: YOLO Misdetection — the Cross-Element Validator
+
+  This is a real failure mode. At 300 DPI, a thick wall junction looks identical
+   to a small column. You need a cross-agent validation layer that runs after 
+  all YOLO agents complete, when you have the full picture:
+
+  Stage 1a — YOLO Column Agent    ─┐
+  Stage 1b — YOLO Wall Agent      ─┤→ ALL detections pooled →
+  CrossElementValidator
+  Stage 1c — YOLO Beam Agent      ─┘
+
+  The validator applies four checks:
+
+  Check 1 — Grid Intersection Plausibility
+  Columns MUST be near a grid intersection (within ~1.5 grid spacings)
+  Any "column" detection far from all grid intersections → suspicious
+
+  score += distance_penalty(col_centre, nearest_grid_intersection)
+
+  Check 2 — Overlap Conflict
+  A "column" bbox that overlaps significantly with a detected "wall" bbox
+  is likely a wall section, not a column — flag it
+
+  if iou(col_bbox, wall_bbox) > 0.4:
+      flag col as CONFLICT, flag wall as CONFLICT
+      → human review, not automatic rejection
+
+  Check 3 — Geometric Plausibility per Element Type
+  Column:  min(w,h)/max(w,h) should be ≥ 0.60 (squareness)
+  Wall:    max(w,h)/min(w,h) should be ≥ 3.0   (elongation)
+  Beam:    similar to wall but in span direction
+
+  A "column" with aspect ratio 0.2 is almost certainly a misclassified wall
+
+  Check 4 — Neighbourhood Consensus
+  If an isolated "column" has no other columns within 3× the typical
+  grid bay width, it is an outlier — likely a false positive
+  (columns appear in grids, not in isolation)
+
+  ---
+  The Quarantine System — Non-Blocking Review
+
+  The critical design principle: never fail the pipeline. Instead, quarantine
+  suspicious detections and continue:
+
+  {
+      "status":       "quarantined",   # not rejected
+      "reason":       "overlap_conflict:wall_023",
+      "plausibility": 0.31,
+      "resolution":   "human_review",  # flagged in frontend EditPanel
+      # original detection fields preserved
+  }
+
+  The pipeline continues with high-confidence detections. Quarantined items
+  appear in the EditPanel with a warning colour — the user can confirm,
+  reclassify, or dismiss them before the rebuild.
+
+  ---
+  Full Architecture Picture
+
+  yolo_detection_agents/
+    base_yolo_agent.py         ← spatial detection (existing)
+    column_agent.py            ← column detection (existing)
+    wall_agent.py              ← future
+    beam_agent.py              ← future
+
+  type_resolution_agents/
+    base_resolver.py           ← OCR scan, spatial propagation, visual
+  clustering, schedule lookup
+    column_resolver.py         ← Hough circle, grid intersection check, C1/C2
+  tag patterns
+    wall_resolver.py           ← thickness measurement, connectivity topology,
+  W1 patterns
+    beam_resolver.py           ← span direction, depth analysis, B1 patterns
+
+  cross_element_validator/
+    validator.py               ← orchestrates all 4 checks across all agent
+  outputs
+    checks/
+      grid_intersection.py     ← columns vs grid geometry
+      overlap_conflict.py      ← cross-agent bbox overlap
+      geometric_plausibility.py← aspect ratio vs expected element geometry
+      neighbourhood_consensus.py← outlier detection by spatial isolation
+    quarantine.py              ← holds flagged detections, emits to EditPanel
+
+  Controller wiring:
+
+  # Stage 1 — parallel detection (existing)
+  with ThreadPoolExecutor() as ex:
+      col_future  = ex.submit(_run_column_detection, ...)
+      wall_future = ex.submit(_run_wall_detection, ...)   # future
+      beam_future = ex.submit(_run_beam_detection, ...)   # future
+
+  all_detections = merge(col_future, wall_future, beam_future)
+
+  # Stage 1b — type resolution (per-element, parallel)
+  with ThreadPoolExecutor() as ex:
+      ex.submit(ColumnTypeResolver().resolve, col_detections, ...)
+      ex.submit(WallTypeResolver().resolve,   wall_detections, ...)
+
+  # Stage 1c — cross-element validation (NEW, needs all results)
+  validated, quarantined = CrossElementValidator().validate(all_detections,
+  grid_result)
+
+  # Stage 2 onwards uses only `validated` — quarantined goes to EditPanel
+
+  ---
+  Summary of Answers
+
+  ┌───────────────────┬─────────────────────────────────────────────────────┐
+  │     Question      │                       Answer                        │
+  ├───────────────────┼─────────────────────────────────────────────────────┤
+  │                   │ Both — shared base class for common algorithms,     │
+  │ Per-element or    │ per-element subclass for element-specific           │
+  │ shared resolver?  │ strategies. Mirrors the existing BaseYOLOAgent      │
+  │                   │ pattern.                                            │
+  ├───────────────────┼─────────────────────────────────────────────────────┤
+  │                   │ CrossElementValidator runs after all agents,        │
+  │ What if YOLO      │ applies 4 geometric/spatial checks, quarantines     │
+  │ misclassifies?    │ suspicious detections non-blocking — pipeline       │
+  │                   │ continues, user reviews flagged items in EditPanel. │
+  └───────────────────┴─────────────────────────────────────────────────────┘
+
+  The quarantine system is the key — it converts a hard failure ("wall detected
+  as column breaks the pipeline") into a soft warning ("this detection looks
+  suspicious, please confirm before building").
+
+  Want me to scaffold any of these components?
+
+✻ Worked for 58s
