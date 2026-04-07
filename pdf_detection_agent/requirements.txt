@@ -1,0 +1,16 @@
+# PDF Column Detection Agent — dependencies
+# Install: pip install -r requirements.txt
+#
+# Runtime: Python 3.10+
+# Vision model: OpenAI GPT-4o (API key required)
+
+# ── Core ──────────────────────────────────────────────────────────────────────
+PyMuPDF>=1.23.7          # PDF rasterisation (fitz)
+Pillow>=10.1.0           # Image loading, drawing, base64 encoding
+openai>=1.30.0           # OpenAI GPT-4o vision API
+
+# ── Feedback UI ───────────────────────────────────────────────────────────────
+gradio>=6.10.0           # Web-based annotation interface (feedback_app.py)
+
+# ── MCP server (optional — only needed for Claude Desktop / MCP integration) ──
+mcp[cli]>=1.0.0          # mcp_agent_server.py

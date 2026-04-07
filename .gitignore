@@ -50,3 +50,6 @@ Thumbs.db
 
 # Claude context
 ****-this-session-is-being-continued-from-a-previous-c.txt
+
+# API key
+*_key.txt
