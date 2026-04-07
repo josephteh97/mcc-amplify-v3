@@ -1,0 +1,26 @@
+[
+  {
+    "model": "moondream:latest",
+    "approx_gb": 1.7,
+    "notes": "Already pulled \u2014 near-zero baseline",
+    "status": "fail",
+    "score": 1,
+    "tested_at": "2026-04-07T16:07:53.090635",
+    "total_columns": 0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "avg_confidence": 0.0,
+    "valid_json_tiles": 4,
+    "response_time_seconds": 12.7,
+    "avg_time_per_tile_s": 3.2,
+    "rubric": [
+      "\u2713 Valid JSON 100% of tiles",
+      "\u2717 Zero detections",
+      "\u2717 Count out of range (0)",
+      "\u2717 Precision 0.00 \u2264 0.20",
+      "\u2717 Recall 0.00 \u2264 0.30",
+      "\u2717 F1 0.00 \u2264 0.25"
+    ]
+  }
+]
