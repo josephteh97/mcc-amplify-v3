@@ -28,6 +28,8 @@ from typing import Any
 
 import requests
 
+from validation.grid_snap import snap_to_grid_intersection as _snap_to_grid
+
 _DIR     = Path(__file__).parent
 _DB_PATH = _DIR / "memory.sqlite"
 
@@ -173,13 +175,36 @@ def coordinate_transformer(
     px_per_mm = (px_per_mm_x + px_per_mm_y) / 2.0 if px_per_mm_x and px_per_mm_y else 1.0
 
     def px_to_mm(px_x: float, px_y: float) -> tuple[float, float]:
-        """Convert raw pixel coordinates to world mm."""
+        """Convert raw pixel coordinates to world mm (fallback, no grid snap)."""
         return round(px_x / px_per_mm, 1), round(px_y / px_per_mm, 1)
 
-    # ── Transform columns ─────────────────────────────────────────────────────
+    # ── Build grid world (must precede column transform) ─────────────────────
+    grid_world = {
+        "vertical":   [{"label": lbl, "x_mm": x} for lbl, x in zip(v_labels, x_mm)],
+        "horizontal": [{"label": lbl, "y_mm": y} for lbl, y in zip(h_labels, y_mm)],
+        "total_x_mm": total_x_mm,
+        "total_y_mm": total_y_mm if n_h > 0 else 0,
+    }
+    geometry["grid_world"] = grid_world
+
+    v_lines_px = [{"label": lbl, "x_px": x * px_per_mm_x} for lbl, x in zip(v_labels, x_mm)]
+    h_lines_px = [{"label": lbl, "y_px": y * px_per_mm_y} for lbl, y in zip(h_labels, y_mm)]
+    v_world    = {lbl: x for lbl, x in zip(v_labels, x_mm)}
+    h_world    = {lbl: y for lbl, y in zip(h_labels, y_mm)}
+
+    # ── Transform columns (snap to nearest grid intersection) ─────────────────
     for col in geometry.get("columns", []):
         centre = col.get("center") or [None, None]
-        if centre[0] is not None:
+        if centre[0] is None:
+            continue
+        snap = _snap_to_grid(
+            (float(centre[0]), float(centre[1])),
+            v_lines_px, h_lines_px, v_world, h_world,
+        )
+        if snap["ok"]:
+            col["location_mm"] = {"x": snap["x_mm"], "y": snap["y_mm"], "z": 0.0}
+            col["_grid_label"] = snap["grid_label"]
+        else:
             mx, my = px_to_mm(float(centre[0]), float(centre[1]))
             col["location_mm"] = {"x": mx, "y": my, "z": 0.0}
 
@@ -192,18 +217,6 @@ def coordinate_transformer(
             if px_x is not None:
                 mx, my = px_to_mm(float(px_x), float(px_y))
                 pt["x"], pt["y"], pt["z"] = mx, my, 0.0
-
-    # ── Build grid world positions ────────────────────────────────────────────
-    geometry["grid_world"] = {
-        "vertical":   [
-            {"label": v_labels[i], "x_mm": x_mm[i]} for i in range(len(x_mm))
-        ],
-        "horizontal": [
-            {"label": h_labels[i], "y_mm": y_mm[i]} for i in range(len(y_mm))
-        ],
-        "total_x_mm": total_x_mm,
-        "total_y_mm": total_y_mm if n_h > 0 else 0,
-    }
 
     scale_info = {
         "px_per_mm":  round(px_per_mm, 4),
