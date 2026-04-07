@@ -53,3 +53,7 @@ Thumbs.db
 
 # API key
 *_key.txt
+
+# claude documents
+.claude/
+pdf_detection_agent/CLAUDE.md
