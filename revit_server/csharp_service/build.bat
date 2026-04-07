@@ -5,7 +5,7 @@ echo 🛠️  REVIT BRIDGE INITIALIZATION
 echo ============================================
 
 :: 1. Navigation
-cd /d "C:\MyDocuments\mcc-amplify-ai\revit_server\csharp_service"
+cd /d "C:\MyDocuments\mcc-amplify-v3\revit_server\csharp_service"
 echo 📂 Working Directory: %CD%
 
 :: 2. Ubuntu Host Mapping Instruction (Reminder)

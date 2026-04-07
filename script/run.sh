@@ -74,8 +74,7 @@ check_deps() {
         warn "Ollama not found — detection agents will fail without it"
     fi
 
-    if curl -sf --max-time 3 -H "X-API-Key: ${REVIT_SERVER_API_KEY}" \
-            "${WINDOWS_REVIT_SERVER}/health" 2>/dev/null | grep -q "status"; then
+    if curl -sf --max-time 3 "${WINDOWS_REVIT_SERVER}/health" 2>/dev/null | grep -qi "healthy\|status\|ok"; then
         ok "Revit service: reachable"
     else
         warn "Revit service: not reachable at $WINDOWS_REVIT_SERVER"
