@@ -28,10 +28,111 @@ from typing import Any
 
 import requests
 
-from validation.grid_snap import snap_to_grid_intersection as _snap_to_grid
+from validation.grid_snap import snap_to_grid_mm as _snap_to_grid_mm
 
 _DIR     = Path(__file__).parent
 _DB_PATH = _DIR / "memory.sqlite"
+
+# ── Grid coordinate helpers ───────────────────────────────────────────────────
+
+# Architectural alphabet skips I and O (standard drawing convention)
+_ARCH_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ"  # 24 chars
+
+
+def _label_mm(label: str, bay_mm: float) -> float | None:
+    """Return absolute mm position for a single grid label (base = label "1" or "A")."""
+    try:
+        return (int(label) - 1) * bay_mm
+    except ValueError:
+        pass
+    lbl = label.upper()
+    if len(lbl) == 1 and lbl in _ARCH_ALPHA:
+        return _ARCH_ALPHA.index(lbl) * bay_mm
+    if len(lbl) == 2 and lbl[0] == lbl[1] and lbl[0] in _ARCH_ALPHA:
+        return (len(_ARCH_ALPHA) + _ARCH_ALPHA.index(lbl[0])) * bay_mm
+    return None
+
+
+def _labels_to_mm(labels: list[str], bay_mm: float) -> list[float] | None:
+    """
+    Derive mm positions from label values (numeric or architectural alpha).
+    Returns None if any label is unrecognisable.
+    Positions are shifted so the minimum is 0.
+    """
+    positions = [_label_mm(lbl, bay_mm) for lbl in labels]
+    if any(p is None for p in positions):
+        return None
+    base = min(positions)  # type: ignore[type-var]
+    return [p - base for p in positions]  # type: ignore[operator]
+
+
+def _resolve_axis(
+    labels: list[str],
+    img_size: float | None,
+    ctx_bays: list[float],
+    grid_bays: list[float],
+    grid_px: list[float],
+    assumed_bay_mm: float,
+) -> tuple[list[float], float, float, str, list[str]]:
+    """
+    Resolve mm positions and px/mm scale for one grid axis.
+
+    Priority:
+      1. ctx_bays   — explicit bay widths from project_context (manual override)
+      2. grid_bays  — bay widths OCR'd / detected by the grid agent
+      3. grid_px    — pixel positions detected by the grid agent (derives spacing)
+      4. label_mm   — label value × assumed_bay_mm (handles missing grid lines)
+      5. equal_px   — equal spacing × assumed_bay_mm (last resort)
+
+    Returns (mm_positions, total_mm, px_per_mm, source_tag, warnings).
+    """
+    n = len(labels)
+    warns: list[str] = []
+
+    def _from_bays(bays: list[float], tag: str):
+        mm    = [sum(bays[:i]) for i in range(n)]
+        total = sum(bays)
+        ppm   = (img_size / total) if (img_size and total) else 1.0
+        return mm, total, ppm, tag, warns
+
+    if ctx_bays and len(ctx_bays) >= n - 1:
+        return _from_bays(ctx_bays, "context_override")
+
+    if grid_bays and len(grid_bays) >= n - 1:
+        return _from_bays(grid_bays, "grid_detected_bays")
+
+    if grid_px and len(grid_px) == n and n >= 2:
+        spacings = [grid_px[i + 1] - grid_px[i] for i in range(n - 1)]
+        median   = sorted(spacings)[len(spacings) // 2]
+        ppm      = median / assumed_bay_mm if assumed_bay_mm else 1.0
+        mm       = [round((gp - grid_px[0]) / ppm, 1) for gp in grid_px]
+        total    = max(mm) if mm else 0.0
+        return mm, total, ppm, "grid_detected_px", warns
+
+    label_pos = _labels_to_mm(labels, assumed_bay_mm)
+    if label_pos is not None:
+        total = max(label_pos) if label_pos else 0.0
+        ppm   = (img_size / total) if (img_size and total) else 1.0
+        warns.append(
+            f"Grid label positions used ({assumed_bay_mm} mm/bay assumed). "
+            "Provide bay_widths or connect grid pixel detection for exact coordinates."
+        )
+        return label_pos, total, ppm, "label_derived", warns
+
+    if img_size and n >= 2:
+        sp    = img_size / (n - 1)
+        ppm   = sp / assumed_bay_mm if assumed_bay_mm else 1.0
+        mm    = [i * assumed_bay_mm for i in range(n)]
+        total = (n - 1) * assumed_bay_mm
+        warns.append(
+            f"Assumed {assumed_bay_mm} mm per bay with equal spacing for {n} grid lines. "
+            "Coordinates are approximate."
+        )
+        return mm, total, ppm, "fallback_equal_spacing", warns
+
+    warns.append("Cannot derive scale — using 1 px = 1 mm fallback.")
+    return list(range(n)), float(n), 1.0, "fallback_1:1", warns
+
 
 # ── DB connection with idempotent schema init ─────────────────────────────────
 
@@ -112,71 +213,45 @@ def coordinate_transformer(
     grid      = geometry.get("grid", {})
 
     # ── Derive px/mm scale from grid ──────────────────────────────────────────
-    # Grid spacings may come from project_context (if provided by controller)
-    bay_x = ctx.get("bay_widths_x_mm", [])
-    bay_y = ctx.get("bay_widths_y_mm", [])
+    assumed_bay_mm = ctx.get("assumed_bay_mm", 7500)
     img_w = geometry.get("metadata", {}).get("image_w")
     img_h = geometry.get("metadata", {}).get("image_h")
 
-    # Build cumulative mm positions for each grid line
     v_labels = grid.get("vertical_labels", [])
     h_labels = grid.get("horizontal_labels", [])
+
+    x_mm, total_x_mm, px_per_mm_x, source, w = _resolve_axis(
+        labels       = v_labels,
+        img_size     = img_w,
+        ctx_bays     = ctx.get("bay_widths_x_mm", []),
+        grid_bays    = grid.get("bay_widths_x_mm", []),
+        grid_px      = grid.get("vertical_px", []),
+        assumed_bay_mm = assumed_bay_mm,
+    )
+    warnings.extend(w)
+
+    y_mm, total_y_mm, px_per_mm_y, _, w = _resolve_axis(
+        labels       = h_labels,
+        img_size     = img_h,
+        ctx_bays     = ctx.get("bay_widths_y_mm", []),
+        grid_bays    = grid.get("bay_widths_y_mm", []),
+        grid_px      = grid.get("horizontal_px", []),
+        assumed_bay_mm = assumed_bay_mm,
+    )
+    warnings.extend(w)
+
     n_v = len(v_labels)
     n_h = len(h_labels)
-
-    # Use bay widths if provided; else distribute image pixels equally
-    if bay_x and len(bay_x) >= n_v - 1:
-        x_mm = [sum(bay_x[:i]) for i in range(n_v)] if n_v else []
-        total_x_mm = sum(bay_x)
-        px_per_mm_x = (img_w / total_x_mm) if (img_w and total_x_mm) else 1.0
-        source = "context_override"
-    elif img_w and n_v >= 2:
-        # Equal spacing fallback
-        spacing_px = img_w / (n_v - 1) if n_v > 1 else img_w
-        # Assume a typical structural bay of 7500 mm
-        assumed_bay_mm = ctx.get("assumed_bay_mm", 7500)
-        px_per_mm_x    = spacing_px / assumed_bay_mm
-        x_mm           = [i * assumed_bay_mm for i in range(n_v)]
-        total_x_mm     = (n_v - 1) * assumed_bay_mm
-        warnings.append(
-            f"No bay widths provided. Assumed {assumed_bay_mm} mm per bay for "
-            f"{n_v} vertical grid lines. Coordinates are approximate."
-        )
-        source = "fallback_assumed_bay"
-    else:
-        px_per_mm_x = 1.0
-        x_mm        = list(range(n_v))
-        total_x_mm  = n_v
-        warnings.append("Cannot derive X scale — using 1 px = 1 mm fallback.")
-        source = "fallback_1:1"
-
-    if bay_y and len(bay_y) >= n_h - 1:
-        y_mm = [sum(bay_y[:i]) for i in range(n_h)] if n_h else []
-        total_y_mm  = sum(bay_y)
-        px_per_mm_y = (img_h / total_y_mm) if (img_h and total_y_mm) else 1.0
-    elif img_h and n_h >= 2:
-        spacing_px  = img_h / (n_h - 1) if n_h > 1 else img_h
-        assumed_bay = ctx.get("assumed_bay_mm", 7500)
-        px_per_mm_y = spacing_px / assumed_bay
-        y_mm        = [i * assumed_bay for i in range(n_h)]
-        total_y_mm  = (n_h - 1) * assumed_bay
-        if source == "fallback_assumed_bay":
-            pass  # already warned above
-        else:
-            warnings.append(
-                f"No Y bay widths provided. Assumed {assumed_bay} mm per bay."
-            )
-    else:
-        px_per_mm_y = 1.0
-        y_mm        = list(range(n_h))
-        total_y_mm  = n_h
 
     # Average the two axes for a single px_per_mm value
     px_per_mm = (px_per_mm_x + px_per_mm_y) / 2.0 if px_per_mm_x and px_per_mm_y else 1.0
 
     def px_to_mm(px_x: float, px_y: float) -> tuple[float, float]:
-        """Convert raw pixel coordinates to world mm (fallback, no grid snap)."""
-        return round(px_x / px_per_mm, 1), round(px_y / px_per_mm, 1)
+        """Convert raw pixel coordinates to world mm (fallback, no grid snap).
+        Y is flipped: image Y=0 is top; world Y=0 is grid origin (bottom of drawing).
+        """
+        flipped_y = (img_h - px_y) if img_h else px_y
+        return round(px_x / px_per_mm, 1), round(flipped_y / px_per_mm, 1)
 
     # ── Build grid world (must precede column transform) ─────────────────────
     grid_world = {
@@ -187,26 +262,27 @@ def coordinate_transformer(
     }
     geometry["grid_world"] = grid_world
 
-    v_lines_px = [{"label": lbl, "x_px": x * px_per_mm_x} for lbl, x in zip(v_labels, x_mm)]
-    h_lines_px = [{"label": lbl, "y_px": y * px_per_mm_y} for lbl, y in zip(h_labels, y_mm)]
-    v_world    = {lbl: x for lbl, x in zip(v_labels, x_mm)}
-    h_world    = {lbl: y for lbl, y in zip(h_labels, y_mm)}
+    tolerance_mm = assumed_bay_mm * 0.5
 
-    # ── Transform columns (snap to nearest grid intersection) ─────────────────
+    # ── Transform columns (snap to nearest grid intersection in mm space) ─────
     for col in geometry.get("columns", []):
         centre = col.get("center") or [None, None]
         if centre[0] is None:
             continue
-        snap = _snap_to_grid(
-            (float(centre[0]), float(centre[1])),
-            v_lines_px, h_lines_px, v_world, h_world,
+        # Convert pixel centre → approximate mm (coarse, scale-error-prone)
+        approx_x, approx_y = px_to_mm(float(centre[0]), float(centre[1]))
+        # Snap in mm space — robust to scale errors up to ±half a bay
+        snap = _snap_to_grid_mm(
+            (approx_x, approx_y),
+            x_mm, y_mm, v_labels, h_labels,
+            tolerance_mm=tolerance_mm,
         )
         if snap["ok"]:
             col["location_mm"] = {"x": snap["x_mm"], "y": snap["y_mm"], "z": 0.0}
             col["_grid_label"] = snap["grid_label"]
         else:
-            mx, my = px_to_mm(float(centre[0]), float(centre[1]))
-            col["location_mm"] = {"x": mx, "y": my, "z": 0.0}
+            col["location_mm"] = {"x": approx_x, "y": approx_y, "z": 0.0}
+            col["_grid_label"] = None
 
     # ── Transform walls ───────────────────────────────────────────────────────
     for wall in geometry.get("walls", []):

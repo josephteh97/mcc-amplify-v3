@@ -1,53 +1,51 @@
 """
-validation/grid_snap.py — Snap element pixel centers to the nearest grid intersection.
+validation/grid_snap.py — Snap element coordinates to the nearest grid intersection.
 
-Used by coordinate_transformer() to place columns at exact grid-intersection
-mm coordinates rather than scaled pixel positions.
+snap_to_grid_mm() works in world-mm space and is robust to scale estimation
+errors up to half a bay width — use this as the primary snap.
 """
 from __future__ import annotations
 
 
-def snap_to_grid_intersection(
-    center_px: tuple[float, float],
-    v_lines_px: list[dict],
-    h_lines_px: list[dict],
-    v_world: dict[str, float],
-    h_world: dict[str, float],
-    tolerance_px: float = 80.0,
+def snap_to_grid_mm(
+    approx_mm: tuple[float, float],
+    x_mm: list[float],
+    y_mm: list[float],
+    v_labels: list[str],
+    h_labels: list[str],
+    tolerance_mm: float = 4200.0,
 ) -> dict:
     """
-    Snap (cx, cy) to the nearest grid intersection and return its mm coordinates.
+    Snap approximate world-mm coordinates to the nearest grid intersection.
+
+    Works entirely in mm space so it is immune to scale estimation errors as long
+    as the error is less than tolerance_mm (default half of an 8 400 mm bay).
 
     Args:
-        center_px:    Detected element center in pixels (cx, cy).
-        v_lines_px:   [{"label": "1", "x_px": 0.0}, ...]  — vertical grid line positions.
-        h_lines_px:   [{"label": "A", "y_px": 0.0}, ...]  — horizontal grid line positions.
-        v_world:      {"1": 0.0, "2": 7500.0, ...}  — label → x_mm (precomputed by caller).
-        h_world:      {"A": 0.0, "B": 5000.0, ...}  — label → y_mm (precomputed by caller).
-        tolerance_px: Maximum pixel distance from a grid line to snap (default 80 px).
+        approx_mm:    (x_mm, y_mm) coarse world position (from px_to_mm fallback).
+        x_mm:         Sorted list of grid x positions in mm  [0, 8400, 16800, ...].
+        y_mm:         Sorted list of grid y positions in mm  [0, 8400, ...].
+        v_labels:     Grid labels matching x_mm  ["1", "2", ...].
+        h_labels:     Grid labels matching y_mm  ["A", "B", ...].
+        tolerance_mm: Maximum mm distance to snap (default 4 200 mm = half an 8 400 mm bay).
 
     Returns:
         {"ok": bool, "x_mm": float, "y_mm": float, "grid_label": (v_label, h_label) | None}
-        ok=False when: no grid lines present; center is outside tolerance on either axis;
-        or a matched label is absent from v_world/h_world.
+        ok=False when no grid positions are provided or distance exceeds tolerance.
     """
-    if not v_lines_px or not h_lines_px:
+    if not x_mm or not y_mm:
         return {"ok": False, "x_mm": 0.0, "y_mm": 0.0, "grid_label": None}
 
-    cx, cy = center_px
-    best_v = min(v_lines_px, key=lambda g: abs(cx - g["x_px"]))
-    best_h = min(h_lines_px, key=lambda g: abs(cy - g["y_px"]))
+    ax, ay = approx_mm
+    vi = min(range(len(x_mm)), key=lambda i: abs(ax - x_mm[i]))
+    hi = min(range(len(y_mm)), key=lambda i: abs(ay - y_mm[i]))
 
-    if abs(cx - best_v["x_px"]) > tolerance_px or abs(cy - best_h["y_px"]) > tolerance_px:
-        return {"ok": False, "x_mm": 0.0, "y_mm": 0.0, "grid_label": None}
-
-    v_lbl, h_lbl = best_v["label"], best_h["label"]
-    if v_lbl not in v_world or h_lbl not in h_world:
+    if abs(ax - x_mm[vi]) > tolerance_mm or abs(ay - y_mm[hi]) > tolerance_mm:
         return {"ok": False, "x_mm": 0.0, "y_mm": 0.0, "grid_label": None}
 
     return {
         "ok":         True,
-        "x_mm":       v_world[v_lbl],
-        "y_mm":       h_world[h_lbl],
-        "grid_label": (v_lbl, h_lbl),
+        "x_mm":       x_mm[vi],
+        "y_mm":       y_mm[hi],
+        "grid_label": (v_labels[vi], h_labels[hi]),
     }
