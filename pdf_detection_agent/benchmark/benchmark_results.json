@@ -1,0 +1,31 @@
+[
+  {
+    "model": "llava:7b",
+    "status": "error",
+    "inference_time_s": 44.37,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details (status code: 500)",
+    "description": "LLaVA 7B \u2014 classic vision-language",
+    "approx_gb": 4.7
+  },
+  {
+    "model": "llava-phi3:3.8b",
+    "status": "success",
+    "inference_time_s": 32.02,
+    "json_valid": true,
+    "raw_output": "[\n  {\"element_type\": \"column\", \"coordinates\": [120, 340, 155, 375], \"confidence\": 0.92, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 500, 1280, 500], \"confidence\": 0.85, \"shape\": \"horizontal\"}\n]",
+    "elements": {
+      "total": 2,
+      "columns": 1,
+      "grid_lines": 1,
+      "other": 0,
+      "with_valid_coords": 2,
+      "with_confidence": 2
+    },
+    "error": "",
+    "description": "LLaVA-Phi3 3.8B \u2014 Microsoft Phi3 vision",
+    "approx_gb": 2.9
+  }
+]

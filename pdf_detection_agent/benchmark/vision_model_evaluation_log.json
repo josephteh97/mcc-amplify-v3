@@ -385,5 +385,52 @@
     ],
     "notes": "Ollama 0.18 CLIP runner crash (HTTP 500)",
     "tested_at": "2026-04-08T05:55:12.108647"
+  },
+  {
+    "model": "qwen3.5:9b",
+    "approx_gb": 6.6,
+    "vision_size": 1024,
+    "score": 0,
+    "status": "fail",
+    "tp": 0,
+    "fp": 0,
+    "fn": 67,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n_det": 0,
+    "n_gt": 67,
+    "total_columns": 0,
+    "tiles": 1,
+    "tiles_skipped": 0,
+    "valid_json_tiles": 0,
+    "total_time_s": 136.97,
+    "avg_time_per_tile_s": 136.97,
+    "rubric": [
+      "\u2717 JSON 0% (empty content despite 6966-char thinking field)",
+      "\u2717 0 dets",
+      "\u2717 count 0",
+      "\u2717 P=0.00",
+      "\u2717 R=0.00",
+      "\u2717 F1=0.00"
+    ],
+    "notes": "Thinking model (qwen35 family). Correctly perceives image in thinking field (describes grid lines, structural labels RCB3/RCB2/SB1) but returns empty content after reasoning. Cannot emit JSON output for complex structured tasks. Not a pure text model — hybrid vision+thinking. FORCED JSON TESTS (tools.py, 2026-04-09): (A) Tool calling — model spent 526s / 16620 thinking chars but tool_called=False; refused to commit to pixel coords. (B) Structured output (format=schema) — forced valid JSON but output {columns:[],grid_lines:[]} after 312s / 13754 thinking chars. Both approaches confirm: forcing JSON format does not fix localization refusal. Fine-tuning required.",
+    "tested_at": "2026-04-09T09:57:30.000000",
+    "tools_py_results": {
+      "tool_calling": {
+        "tool_called": false,
+        "inference_time_s": 526.18,
+        "thinking_chars": 16620,
+        "columns": 0,
+        "grid_lines": 0
+      },
+      "structured_output": {
+        "tool_called": false,
+        "inference_time_s": 312.82,
+        "thinking_chars": 13754,
+        "columns": 0,
+        "grid_lines": 0
+      }
+    }
   }
 ]

@@ -16,7 +16,6 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import re
-import subprocess
 import sys
 import time
 from datetime import datetime
@@ -183,7 +182,7 @@ def count_elements(dets: list[dict]) -> dict:
     }
 
 
-def benchmark_one(tag: str, image_path: str) -> dict:
+def benchmark_one(tag: str, image_path: str, installed_tags: set[str]) -> dict:
     """Run inference for one model. Pull first if needed."""
     result = {
         "model": tag, "status": "pending",
@@ -191,19 +190,12 @@ def benchmark_one(tag: str, image_path: str) -> dict:
         "raw_output": "", "elements": {}, "error": "",
     }
 
-    # Always pull to ensure model exists with exact tag
-    installed = False
-    try:
-        installed_models = ollama.list()
-        installed = any(tag == m.model for m in installed_models.models)
-    except Exception:
-        pass
-
-    if not installed:
+    if tag not in installed_tags:
         if not pull_model(tag):
             result["status"] = "pull_failed"
             result["error"] = "could not pull"
             return result
+        installed_tags.add(tag)
 
     log(f"    Inferring...")
     t0 = time.time()
@@ -232,7 +224,7 @@ def benchmark_one(tag: str, image_path: str) -> dict:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
 
-        raw = response.get("message", {}).get("content", "")
+        raw = response.message.content or ""
         result["raw_output"] = raw[:3000]
 
         is_valid, parsed, err = validate_json(raw)
@@ -408,10 +400,15 @@ def main():
     log(f"Image: {IMAGE_PATH}")
     log("=" * 80)
 
+    try:
+        installed_tags = {m.model for m in ollama.list().models}
+    except Exception:
+        installed_tags = set()
+
     results = []
     for i, (tag, desc, approx_gb, notes) in enumerate(ALL_VISION_MODELS, 1):
         log(f"\n[{i}/{len(ALL_VISION_MODELS)}] {tag} — {desc} (~{approx_gb}GB) [{notes}]")
-        result = benchmark_one(tag, IMAGE_PATH)
+        result = benchmark_one(tag, IMAGE_PATH, installed_tags)
         result["description"] = desc
         result["approx_gb"] = approx_gb
         result["notes"] = notes

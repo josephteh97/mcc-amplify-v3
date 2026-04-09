@@ -17,10 +17,8 @@ import argparse
 import concurrent.futures
 import json
 import re
-import subprocess
 import sys
 import time
-import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -94,13 +92,8 @@ def log(msg: str) -> None:
         f.write(line + "\n")
 
 
-def is_model_installed(model_tag: str) -> bool:
-    """Check if model is already pulled (exact tag match)."""
-    try:
-        installed = ollama.list()
-        return any(model_tag == m.model for m in installed.models)
-    except Exception:
-        return False
+def is_model_installed(model_tag: str, installed_tags: set[str]) -> bool:
+    return model_tag in installed_tags
 
 
 def pull_model(model_tag: str) -> bool:
@@ -217,8 +210,8 @@ def benchmark_model(model_tag: str, image_path: str) -> dict:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
 
-        raw = response.get("message", {}).get("content", "")
-        result["raw_output"] = raw[:3000]  # truncate for log
+        raw = response.message.content or ""
+        result["raw_output"] = raw[:3000]
 
         is_valid, parsed, err = validate_json(raw)
         result["json_valid"] = is_valid
@@ -270,6 +263,11 @@ def main():
     else:
         candidates = CANDIDATE_MODELS
 
+    try:
+        installed_tags = {m.model for m in ollama.list().models}
+    except Exception:
+        installed_tags = set()
+
     results = []
     for i, (model_tag, description, approx_gb) in enumerate(candidates, 1):
         log(f"\n{'='*60}")
@@ -277,7 +275,7 @@ def main():
         log(f"{'='*60}")
 
         # Check / pull model
-        if not is_model_installed(model_tag):
+        if not is_model_installed(model_tag, installed_tags):
             if args.skip_pull:
                 log(f"  SKIPPED (not installed, --skip-pull)")
                 results.append({
@@ -291,6 +289,7 @@ def main():
                     "status": "pull_failed", "error": "could not pull",
                 })
                 continue
+            installed_tags.add(model_tag)
 
         # Run benchmark
         result = benchmark_model(model_tag, image_path)

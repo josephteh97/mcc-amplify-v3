@@ -1,0 +1,126 @@
+[
+  {
+    "model": "gemma3:270m",
+    "status": "error",
+    "inference_time_s": 31.9,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "Failed to create new sequence: failed to process inputs: this model is missing data required for image input (status code: 500)",
+    "description": "Gemma 3 270M \u2014 ultra-tiny",
+    "approx_gb": 0.3,
+    "notes": "292MB"
+  },
+  {
+    "model": "gemma3:1b",
+    "status": "error",
+    "inference_time_s": 5.56,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "Failed to create new sequence: failed to process inputs: this model is missing data required for image input (status code: 500)",
+    "description": "Gemma 3 1B \u2014 tiny",
+    "approx_gb": 0.8,
+    "notes": "815MB"
+  },
+  {
+    "model": "gemma3:4b",
+    "status": "success",
+    "inference_time_s": 41.23,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 300, 1280, 300], \"confidence\": 0.98, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [60, 300, 60, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [120, 300, 120, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [240, 300, 240, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [360, 300, 360, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [480, 300, 480, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [600, 300, 600, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [720, 300, 720, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [840, 300, 840, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [960, 300, 960, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [1080, 300, 1080, 500], \"confidence\": 0.98, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [120, 300, 1280, 300], \"confidence\": 0.98, \"shape\": \"horizontal\"}\n]\n```",
+    "elements": {
+      "total": 12,
+      "columns": 0,
+      "grid_lines": 12,
+      "other": 0,
+      "valid_coords": 12,
+      "valid_conf": 12
+    },
+    "error": "",
+    "description": "Gemma 3 4B \u2014 mid",
+    "approx_gb": 3.3,
+    "notes": "3.3GB"
+  },
+  {
+    "model": "gemma3:1b-it-qat",
+    "status": "error",
+    "inference_time_s": 7.72,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "Failed to create new sequence: failed to process inputs: this model is missing data required for image input (status code: 500)",
+    "description": "Gemma 3 1B QAT \u2014 quantized",
+    "approx_gb": 0.5,
+    "notes": "QAT variant"
+  },
+  {
+    "model": "gemma3:4b-it-qat",
+    "status": "success",
+    "inference_time_s": 39.56,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\"element_type\": \"column\", \"coordinates\": [100, 340, 130, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 340, 1280, 340], \"confidence\": 0.98, \"shape\": \"horizontal\"},\n  {\"element_type\": \"column\", \"coordinates\": [100, 370, 130, 400], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 370, 1280, 370], \"confidence\": 0.98, \"shape\": \"horizontal\"},\n  {\"element_type\": \"column\", \"coordinates\": [200, 340, 230, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 340, 1280, 340], \"confidence\": 0.98, \"shape\": \"horizontal\"},\n  {\"element_type\": \"column\", \"coordinates\": [200, 370, 230, 400], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 370, 1280, 370], \"confidence\": 0.98, \"shape\": \"horizontal\"}\n]\n```",
+    "elements": {
+      "total": 8,
+      "columns": 4,
+      "grid_lines": 4,
+      "other": 0,
+      "valid_coords": 8,
+      "valid_conf": 8
+    },
+    "error": "",
+    "description": "Gemma 3 4B QAT \u2014 quantized",
+    "approx_gb": 2.5,
+    "notes": "QAT variant"
+  },
+  {
+    "model": "gemma3:12b",
+    "status": "success",
+    "inference_time_s": 156.79,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      133,\n      227,\n      168,\n      262\n    ],\n    \"confidence\": 0.88,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      373,\n      227,\n      408,\n      262\n    ],\n    \"confidence\": 0.88,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      613,\n      227,\n      648,\n      262\n    ],\n    \"confidence\": 0.88,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      853,\n      227,\n      888,\n      262\n    ],\n    \"confidence\": 0.88,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      1093,\n      227,\n      1128,\n      262\n    ],\n    \"confidence\": 0.88,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      217,\n      1280,\n      217\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      262,\n      1280,\n      262\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      500,\n      1280,\n      500\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      738,\n      1280,\n      738\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      976,\n      1280,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      133,\n      227,\n      133,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"vertical\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      373,\n      227,\n      373,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"vertical\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      613,\n      227,\n      613,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"vertical\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      853,\n      227,\n      853,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"vertical\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      1093,\n      227,\n      1093,\n      976\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"vertical\"\n  }\n]\n```",
+    "elements": {
+      "total": 15,
+      "columns": 5,
+      "grid_lines": 10,
+      "other": 0,
+      "valid_coords": 15,
+      "valid_conf": 15
+    },
+    "error": "",
+    "description": "Gemma 3 12B \u2014 large",
+    "approx_gb": 8.1,
+    "notes": "may not fit 8GB"
+  },
+  {
+    "model": "gemma3:12b-it-qat",
+    "status": "success",
+    "inference_time_s": 226.39,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\"element_type\": \"column\", \"coordinates\": [136, 154, 162, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [262, 154, 288, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [388, 154, 414, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [514, 154, 540, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [640, 154, 666, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [766, 154, 792, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [892, 154, 918, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [1018, 154, 1044, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [1144, 154, 1170, 224], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 120, 1280, 120], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 250, 1280, 250], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 380, 1280, 380], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 510, 1280, 510], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 640, 1280, 640], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 770, 1280, 770], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 900, 1280, 900], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 1030, 1280, 1030], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [0, 1160, 1280, 1160], \"confidence\": 0.90, \"shape\": \"horizontal\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [120, 154, 120, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [288, 154, 288, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [414, 154, 414, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [540, 154, 540, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [666, 154, 666, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [792, 154, 792, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [918, 154, 918, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [1044, 154, 1044, 224], \"confidence\": 0.90, \"shape\": \"vertical\"},\n  {\"element_type\": \"grid_line\", \"coordinates\": [1170, 154, 1170, 224], \"confidence\": 0.90, \"shape\": \"vertical\"}\n]\n```",
+    "elements": {
+      "total": 27,
+      "columns": 9,
+      "grid_lines": 18,
+      "other": 0,
+      "valid_coords": 27,
+      "valid_conf": 27
+    },
+    "error": "",
+    "description": "Gemma 3 12B QAT \u2014 quantized large",
+    "approx_gb": 6.0,
+    "notes": "QAT may fit"
+  },
+  {
+    "model": "gemma4:e2b",
+    "status": "timeout",
+    "inference_time_s": 300.0,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "exceeded 300s",
+    "description": "Gemma 4 Effective 2B \u2014 edge optimized",
+    "approx_gb": 2.0,
+    "notes": "mobile/IoT focused"
+  }
+]
