@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import re
 import subprocess
@@ -21,7 +22,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import fitz
 import ollama
+from PIL import Image
 
 # ── Test image ────────────────────────────────────────────────────────────────
 IMAGE_PATH = "/tmp/test_floorplan_tile.png"
@@ -205,15 +208,27 @@ def benchmark_one(tag: str, image_path: str) -> dict:
     log(f"    Inferring...")
     t0 = time.time()
     try:
-        response = ollama.chat(
-            model=tag,
-            messages=[{
-                "role": "user",
-                "content": DETECTION_PROMPT,
-                "images": [image_path],
-            }],
-            options={"num_predict": 4096, "temperature": 0.1},
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                ollama.chat,
+                model=tag,
+                messages=[{
+                    "role": "user",
+                    "content": DETECTION_PROMPT,
+                    "images": [image_path],
+                }],
+                options={"num_predict": 4096, "temperature": 0.1},
+            )
+            try:
+                response = future.result(timeout=TIMEOUT_SECONDS)
+            except concurrent.futures.TimeoutError:
+                elapsed = round(time.time() - t0, 2)
+                result["inference_time_s"] = elapsed
+                result["status"] = "timeout"
+                result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
+                log(f"    TIMEOUT after {elapsed}s")
+                return result
+
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
 
@@ -374,8 +389,6 @@ def main():
         # Render test tile from PDF
         log("Rendering test tile from floor plan PDF...")
         try:
-            import fitz
-            from PIL import Image
             pdf_path = "/home/jiezhi/Documents/floor-plan-pdf/TGCH-TD-S-200-L3-00.pdf"
             doc = fitz.open(pdf_path)
             pix = doc[0].get_pixmap(matrix=fitz.Matrix(150/72, 150/72), colorspace=fitz.csRGB)
@@ -406,8 +419,8 @@ def main():
 
         # Save incrementally (so we don't lose progress on crash)
         RESULTS_JSON.write_text(json.dumps(results, indent=2, default=str))
-        write_summary(results)
 
+    write_summary(results)
     log("\n" + "=" * 80)
     log("ALL MODELS COMPLETE")
     log(f"Results: {RESULTS_JSON}")

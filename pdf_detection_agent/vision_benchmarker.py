@@ -14,7 +14,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import re
 import subprocess
 import sys
 import time
@@ -93,12 +95,10 @@ def log(msg: str) -> None:
 
 
 def is_model_installed(model_tag: str) -> bool:
-    """Check if model is already pulled."""
+    """Check if model is already pulled (exact tag match)."""
     try:
         installed = ollama.list()
-        names = [m.model for m in installed.models]
-        # Match by prefix (e.g. "qwen3-vl:4b" matches "qwen3-vl:4b")
-        return any(model_tag in n or n.startswith(model_tag.split(":")[0]) for n in names)
+        return any(model_tag == m.model for m in installed.models)
     except Exception:
         return False
 
@@ -144,7 +144,6 @@ def validate_json(text: str) -> tuple[bool, list | None, str]:
         pass
 
     # Try to extract [...] from surrounding text
-    import re
     m = re.search(r"\[.*\]", text, re.DOTALL)
     if m:
         try:
@@ -194,15 +193,27 @@ def benchmark_model(model_tag: str, image_path: str) -> dict:
     log(f"  Inferring with {model_tag}...")
     t0 = time.time()
     try:
-        response = ollama.chat(
-            model=model_tag,
-            messages=[{
-                "role": "user",
-                "content": DETECTION_PROMPT,
-                "images": [image_path],
-            }],
-            options={"num_predict": 4096, "temperature": 0.1},
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                ollama.chat,
+                model=model_tag,
+                messages=[{
+                    "role": "user",
+                    "content": DETECTION_PROMPT,
+                    "images": [image_path],
+                }],
+                options={"num_predict": 4096, "temperature": 0.1},
+            )
+            try:
+                response = future.result(timeout=TIMEOUT_SECONDS)
+            except concurrent.futures.TimeoutError:
+                elapsed = round(time.time() - t0, 2)
+                result["inference_time_s"] = elapsed
+                result["status"] = "timeout"
+                result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
+                log(f"  TIMEOUT after {elapsed}s")
+                return result
+
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
 
