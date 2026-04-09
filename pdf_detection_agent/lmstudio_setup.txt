@@ -1,0 +1,123 @@
+================================================================================
+  LM STUDIO SETUP & BENCHMARK WORKFLOW
+  For VLM floor plan column detection testing
+================================================================================
+
+
+STEP 1 — ADD lms TO PATH (one-time, run in terminal)
+-----------------------------------------------------
+  echo 'export PATH="$HOME/.lmstudio/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+
+  Verify:
+    lms --version
+
+
+STEP 2 — START THE SERVER
+--------------------------
+  lms server start
+
+  Verify it's running on port 1234:
+    lms server status
+
+  Stop when done:
+    lms server stop
+
+
+STEP 3 — PER-MODEL TEST CYCLE (repeat for each of the 12 models)
+-----------------------------------------------------------------
+  a) Download the model (first time only):
+       lms get <model-id>
+
+  b) Load into VRAM:
+       lms load <model-id>
+
+  c) Run the benchmark:
+       cd ~/Documents/mcc-amplify-v2/pdf_detection_agent
+       conda run -n yolo python benchmark/lmstudio_benchmarker.py
+
+  d) Unload from VRAM:
+       lms unload <model-id>
+
+  e) Repeat from (a) with next model.
+
+
+STEP 4 — VIEW ACCUMULATED RESULTS AT ANY TIME
+----------------------------------------------
+  conda run -n yolo python benchmark/lmstudio_benchmarker.py --results
+
+
+================================================================================
+  12 VISION MODELS TO TEST (from lmstudio.ai/models?filter=vision)
+================================================================================
+
+  Run these lms get commands one at a time. Download takes a few minutes each.
+
+  #   lms get command                                  Approx size
+  -------------------------------------------------------------------
+  1.  lms get qwen2.5-vl-7b-instruct                  ~5.0 GB
+  2.  lms get qwen2.5-vl-3b-instruct                  ~2.3 GB
+  3.  lms get qwen2-vl-2b-instruct                    ~1.6 GB
+  4.  lms get llava-v1.6-mistral-7b                   ~4.1 GB
+  5.  lms get llava-phi-3-mini                        ~2.2 GB
+  6.  lms get moondream2                              ~1.7 GB
+  7.  lms get internvl2-2b                            ~1.6 GB
+  8.  lms get internvl2-8b                            ~5.5 GB
+  9.  lms get smolvlm-instruct                        ~2.2 GB
+  10. lms get phi-4-multimodal-instruct               ~5.6 GB
+  11. lms get pixtral-12b                             ~8.0 GB
+  12. lms get gemma-3-4b-it                           ~3.3 GB
+
+  NOTE: Exact model IDs may differ — if lms get fails, search first:
+    lms get <partial-name>   (interactive search)
+
+
+================================================================================
+  BENCHMARK SCRIPT DETAILS
+================================================================================
+
+  Script  : benchmark/lmstudio_benchmarker.py
+  Results : benchmark/lmstudio_results.json   (appended after each test)
+  Log     : benchmark/lmstudio_results.log
+
+  The script auto-detects whichever model is currently loaded in LM Studio.
+  If multiple models are loaded, pass --model "model-id" to specify.
+
+  Extra options:
+    --image /path/to/tile.png    Use a different test image
+    --url http://host:port/v1    If LM Studio is on a different port
+    --results                    Print summary table and exit
+
+
+================================================================================
+  QUICK REFERENCE — FULL CYCLE FOR ONE MODEL
+================================================================================
+
+  lms server start
+  lms get qwen2.5-vl-7b-instruct
+  lms load qwen2.5-vl-7b-instruct
+  cd ~/Documents/mcc-amplify-v2/pdf_detection_agent
+  conda run -n yolo python benchmark/lmstudio_benchmarker.py
+  lms unload qwen2.5-vl-7b-instruct
+
+
+================================================================================
+  TROUBLESHOOTING
+================================================================================
+
+  "Cannot reach LM Studio"
+    → Run: lms server start
+    → Check: lms server status  (should show port 1234)
+
+  "No model loaded"
+    → Run: lms load <model-id>
+    → Check: lms ps  (lists models currently in memory)
+
+  "lms: command not found"
+    → Run: source ~/.bashrc   (or open a new terminal)
+    → Or use full path: ~/.lmstudio/bin/lms
+
+  Model not found by lms get
+    → Try partial name search: lms get qwen   (shows matching results)
+    → Or download via LM Studio desktop app, then use lms ls to find the ID
+
+================================================================================
