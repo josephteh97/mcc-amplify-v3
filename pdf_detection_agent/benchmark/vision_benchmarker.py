@@ -16,13 +16,14 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
-import re
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
 import ollama
+
+from utils import TIMEOUT_SECONDS, count_elements, ollama_chat_with_timeout, validate_json
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,8 @@ CANDIDATE_MODELS = [
     ("kimi-k2.5:latest",                            "Kimi K2.5 — Moonshot multimodal agentic",         7.0),
     ("ministral-3:3b",                              "Ministral 3B — Mistral edge vision",              2.3),
     ("gemma3:270m",                                 "Gemma 3 270M — ultra-tiny vision",                0.4),
+    # ── NEW: Round 3 — Llama 4 MoE ──────────────────────────────────────
+    ("llama4:16x17b",                               "Llama 4 Scout 16x17B MoE — Meta multimodal",     67.0),
 ]
 
 DETECTION_PROMPT = """\
@@ -77,7 +80,6 @@ If nothing found, return: []
 Do NOT include any text outside the JSON array.
 """
 
-TIMEOUT_SECONDS = 180       # 3 min max per model
 LOG_FILE = Path(__file__).parent / "results.log"
 RESULTS_JSON = Path(__file__).parent / "benchmark_results.json"
 
@@ -108,65 +110,6 @@ def pull_model(model_tag: str) -> bool:
         return False
 
 
-def validate_json(text: str) -> tuple[bool, list | None, str]:
-    """
-    Attempt to parse model output as JSON array.
-    Returns (is_valid, parsed_list_or_none, error_message).
-    """
-    text = text.strip()
-    # Strip markdown code fences
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1] if "\n" in text else text[3:]
-    if text.endswith("```"):
-        text = text[: text.rfind("```")]
-    text = text.strip()
-
-    # Try direct parse
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return True, parsed, ""
-        if isinstance(parsed, dict):
-            # Some models wrap in {"columns": [...]}
-            for key in ("columns", "detections", "elements", "results"):
-                if key in parsed and isinstance(parsed[key], list):
-                    return True, parsed[key], ""
-            return False, None, f"JSON is dict without array key: {list(parsed.keys())}"
-        return False, None, f"JSON is {type(parsed).__name__}, expected array"
-    except json.JSONDecodeError:
-        pass
-
-    # Try to extract [...] from surrounding text
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if m:
-        try:
-            parsed = json.loads(m.group())
-            if isinstance(parsed, list):
-                return True, parsed, ""
-        except json.JSONDecodeError:
-            pass
-
-    return False, None, f"Could not parse JSON from: {text[:200]}"
-
-
-def count_elements(detections: list[dict]) -> dict:
-    """Count columns and grid lines from parsed detections."""
-    columns = [d for d in detections if d.get("element_type") == "column"]
-    grids = [d for d in detections if d.get("element_type") == "grid_line"]
-    has_coords = sum(1 for d in detections
-                     if isinstance(d.get("coordinates"), list) and len(d["coordinates"]) == 4)
-    has_conf = sum(1 for d in detections
-                   if isinstance(d.get("confidence"), (int, float)))
-    return {
-        "total": len(detections),
-        "columns": len(columns),
-        "grid_lines": len(grids),
-        "other": len(detections) - len(columns) - len(grids),
-        "with_valid_coords": has_coords,
-        "with_confidence": has_conf,
-    }
-
-
 # ── Core benchmark ────────────────────────────────────────────────────────────
 
 def benchmark_model(model_tag: str, image_path: str) -> dict:
@@ -186,51 +129,49 @@ def benchmark_model(model_tag: str, image_path: str) -> dict:
     log(f"  Inferring with {model_tag}...")
     t0 = time.time()
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                ollama.chat,
-                model=model_tag,
-                messages=[{
-                    "role": "user",
-                    "content": DETECTION_PROMPT,
-                    "images": [image_path],
-                }],
-                options={"num_predict": 4096, "temperature": 0.1},
-            )
-            try:
-                response = future.result(timeout=TIMEOUT_SECONDS)
-            except concurrent.futures.TimeoutError:
-                elapsed = round(time.time() - t0, 2)
-                result["inference_time_s"] = elapsed
-                result["status"] = "timeout"
-                result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
-                log(f"  TIMEOUT after {elapsed}s")
-                return result
-
+        response = ollama_chat_with_timeout(
+            TIMEOUT_SECONDS,
+            model=model_tag,
+            messages=[{
+                "role": "user",
+                "content": DETECTION_PROMPT,
+                "images": [image_path],
+            }],
+            options={"num_predict": 4096, "temperature": 0.1},
+            keep_alive=0,
+        )
+    except concurrent.futures.TimeoutError:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
-
-        raw = response.message.content or ""
-        result["raw_output"] = raw[:3000]
-
-        is_valid, parsed, err = validate_json(raw)
-        result["json_valid"] = is_valid
-        if is_valid and parsed is not None:
-            result["elements"] = count_elements(parsed)
-            result["status"] = "success"
-        else:
-            result["error"] = err
-            result["status"] = "invalid_json"
-
-        log(f"  Done in {elapsed}s — JSON valid: {is_valid} — "
-            f"elements: {result['elements'].get('total', 0)}")
-
+        result["status"] = "timeout"
+        result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
+        log(f"  TIMEOUT after {elapsed}s")
+        return result
     except Exception as e:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
         result["status"] = "error"
         result["error"] = str(e)[:500]
         log(f"  ERROR after {elapsed}s: {e}")
+        return result
+
+    elapsed = round(time.time() - t0, 2)
+    result["inference_time_s"] = elapsed
+
+    raw = response.message.content or ""
+    result["raw_output"] = raw[:3000]
+
+    is_valid, parsed, err = validate_json(raw)
+    result["json_valid"] = is_valid
+    if is_valid and parsed is not None:
+        result["elements"] = count_elements(parsed)
+        result["status"] = "success"
+    else:
+        result["error"] = err
+        result["status"] = "invalid_json"
+
+    log(f"  Done in {elapsed}s — JSON valid: {is_valid} — "
+        f"elements: {result['elements'].get('total', 0)}")
 
     return result
 
@@ -297,6 +238,11 @@ def main():
         result["approx_gb"] = approx_gb
         results.append(result)
 
+        # Atomic incremental save — crash-safe for long runs
+        _tmp = RESULTS_JSON.with_suffix(".tmp")
+        _tmp.write_text(json.dumps(results, indent=2, default=str))
+        _tmp.rename(RESULTS_JSON)
+
     # ── Save results ──────────────────────────────────────────────────────
     RESULTS_JSON.write_text(json.dumps(results, indent=2, default=str))
     log(f"\nResults saved to {RESULTS_JSON}")
@@ -329,7 +275,7 @@ def main():
         def score(r):
             e = r.get("elements", {})
             return (e.get("total", 0) * 10
-                    + e.get("with_valid_coords", 0) * 5
+                    + e.get("valid_coords", 0) * 5
                     - (r.get("inference_time_s", 999)))
         best = max(valid, key=score)
         log(f"\nBEST MODEL: {best['model']}")

@@ -19,10 +19,11 @@ from typing import Any
 
 import ollama
 
+from utils import TIMEOUT_SECONDS, ollama_chat_with_timeout
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 DEFAULT_MODEL = "qwen3.5:9b"
-TIMEOUT_SECONDS = 300  # 5 min — matches overnight_benchmark
 
 # ── Tool schema (function calling) ────────────────────────────────────────────
 
@@ -182,22 +183,20 @@ def detect_with_tool_calling(
         }
     """
     t0 = time.time()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            ollama.chat,
+    try:
+        response = ollama_chat_with_timeout(
+            TIMEOUT_SECONDS,
             model=model,
             messages=[{"role": "user", "content": _TOOL_PROMPT, "images": [image_path]}],
             tools=[DETECTION_TOOL],
         )
-        try:
-            response = future.result(timeout=TIMEOUT_SECONDS)
-        except concurrent.futures.TimeoutError:
-            return {
-                "approach": "tool_calling", "tool_called": False, "timed_out": True,
-                "columns": [], "grid_lines": [],
-                "inference_time_s": round(time.time() - t0, 2),
-                "thinking_chars": 0, "content": f"timeout>{TIMEOUT_SECONDS}s",
-            }
+    except concurrent.futures.TimeoutError:
+        return {
+            "approach": "tool_calling", "tool_called": False, "timed_out": True,
+            "columns": [], "grid_lines": [],
+            "inference_time_s": round(time.time() - t0, 2),
+            "thinking_chars": 0, "content": f"timeout>{TIMEOUT_SECONDS}s",
+        }
     elapsed = round(time.time() - t0, 2)
 
     tool_calls = getattr(response.message, "tool_calls", None) or []
@@ -242,22 +241,20 @@ def detect_with_structured_output(
     and coordinates are [x1,y1,x2,y2] lists instead of separate x1/y1/x2/y2 keys.
     """
     t0 = time.time()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            ollama.chat,
+    try:
+        response = ollama_chat_with_timeout(
+            TIMEOUT_SECONDS,
             model=model,
             messages=[{"role": "user", "content": _SCHEMA_PROMPT, "images": [image_path]}],
             format=DETECTION_SCHEMA,
         )
-        try:
-            response = future.result(timeout=TIMEOUT_SECONDS)
-        except concurrent.futures.TimeoutError:
-            return {
-                "approach": "structured_output", "schema_enforced": True, "timed_out": True,
-                "columns": [], "grid_lines": [],
-                "inference_time_s": round(time.time() - t0, 2),
-                "thinking_chars": 0, "content": f"timeout>{TIMEOUT_SECONDS}s",
-            }
+    except concurrent.futures.TimeoutError:
+        return {
+            "approach": "structured_output", "schema_enforced": True, "timed_out": True,
+            "columns": [], "grid_lines": [],
+            "inference_time_s": round(time.time() - t0, 2),
+            "thinking_chars": 0, "content": f"timeout>{TIMEOUT_SECONDS}s",
+        }
     elapsed = round(time.time() - t0, 2)
 
     thinking = getattr(response.message, "thinking", None) or ""

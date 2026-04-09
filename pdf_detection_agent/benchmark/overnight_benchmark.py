@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
-import re
 import sys
 import time
 from datetime import datetime
@@ -24,6 +23,8 @@ from pathlib import Path
 import fitz
 import ollama
 from PIL import Image
+
+from utils import TIMEOUT_SECONDS, count_elements, ollama_chat_with_timeout, validate_json
 
 # ── Test image ────────────────────────────────────────────────────────────────
 IMAGE_PATH = "/tmp/test_floorplan_tile.png"
@@ -104,9 +105,6 @@ If nothing found, return: []
 Do NOT include any text outside the JSON array.
 """
 
-TIMEOUT_SECONDS = 300  # 5 min max per model
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def log(msg: str) -> None:
@@ -127,61 +125,6 @@ def pull_model(tag: str) -> bool:
         return False
 
 
-def validate_json(text: str) -> tuple[bool, list | None, str]:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1] if "\n" in text else text[3:]
-    if text.endswith("```"):
-        text = text[: text.rfind("```")]
-    text = text.strip()
-
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return True, parsed, ""
-        if isinstance(parsed, dict):
-            for key in ("columns", "detections", "elements", "results", "data"):
-                if key in parsed and isinstance(parsed[key], list):
-                    return True, parsed[key], ""
-            return False, None, f"dict without known array key"
-        return False, None, f"not array/dict"
-    except json.JSONDecodeError:
-        pass
-
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if m:
-        try:
-            parsed = json.loads(m.group())
-            if isinstance(parsed, list):
-                return True, parsed, ""
-        except json.JSONDecodeError:
-            pass
-
-    items = []
-    for m in re.finditer(r"\{[^{}]+\}", text, re.DOTALL):
-        try:
-            items.append(json.loads(m.group()))
-        except json.JSONDecodeError:
-            pass
-    if items:
-        return True, items, ""
-
-    return False, None, f"parse failed: {text[:150]}"
-
-
-def count_elements(dets: list[dict]) -> dict:
-    cols = [d for d in dets if d.get("element_type") == "column"]
-    grids = [d for d in dets if d.get("element_type") == "grid_line"]
-    has_coords = sum(1 for d in dets
-                     if isinstance(d.get("coordinates"), list) and len(d["coordinates"]) == 4)
-    has_conf = sum(1 for d in dets if isinstance(d.get("confidence"), (int, float)))
-    return {
-        "total": len(dets), "columns": len(cols), "grid_lines": len(grids),
-        "other": len(dets) - len(cols) - len(grids),
-        "valid_coords": has_coords, "valid_conf": has_conf,
-    }
-
-
 def benchmark_one(tag: str, image_path: str, installed_tags: set[str]) -> dict:
     """Run inference for one model. Pull first if needed."""
     result = {
@@ -200,51 +143,48 @@ def benchmark_one(tag: str, image_path: str, installed_tags: set[str]) -> dict:
     log(f"    Inferring...")
     t0 = time.time()
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                ollama.chat,
-                model=tag,
-                messages=[{
-                    "role": "user",
-                    "content": DETECTION_PROMPT,
-                    "images": [image_path],
-                }],
-                options={"num_predict": 4096, "temperature": 0.1},
-            )
-            try:
-                response = future.result(timeout=TIMEOUT_SECONDS)
-            except concurrent.futures.TimeoutError:
-                elapsed = round(time.time() - t0, 2)
-                result["inference_time_s"] = elapsed
-                result["status"] = "timeout"
-                result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
-                log(f"    TIMEOUT after {elapsed}s")
-                return result
-
+        response = ollama_chat_with_timeout(
+            TIMEOUT_SECONDS,
+            model=tag,
+            messages=[{
+                "role": "user",
+                "content": DETECTION_PROMPT,
+                "images": [image_path],
+            }],
+            options={"num_predict": 4096, "temperature": 0.1},
+            keep_alive=0,
+        )
+    except concurrent.futures.TimeoutError:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
-
-        raw = response.message.content or ""
-        result["raw_output"] = raw[:3000]
-
-        is_valid, parsed, err = validate_json(raw)
-        result["json_valid"] = is_valid
-        if is_valid and parsed is not None:
-            result["elements"] = count_elements(parsed)
-            result["status"] = "success"
-        else:
-            result["error"] = err
-            result["status"] = "invalid_json"
-
-        log(f"    Done {elapsed}s | JSON={is_valid} | elements={result['elements'].get('total', 0)}")
-
+        result["status"] = "timeout"
+        result["error"] = f"exceeded {TIMEOUT_SECONDS}s"
+        log(f"    TIMEOUT after {elapsed}s")
+        return result
     except Exception as e:
         elapsed = round(time.time() - t0, 2)
         result["inference_time_s"] = elapsed
         result["status"] = "error"
         result["error"] = str(e)[:300]
         log(f"    ERROR {elapsed}s: {str(e)[:120]}")
+        return result
 
+    elapsed = round(time.time() - t0, 2)
+    result["inference_time_s"] = elapsed
+
+    raw = response.message.content or ""
+    result["raw_output"] = raw[:3000]
+
+    is_valid, parsed, err = validate_json(raw)
+    result["json_valid"] = is_valid
+    if is_valid and parsed is not None:
+        result["elements"] = count_elements(parsed)
+        result["status"] = "success"
+    else:
+        result["error"] = err
+        result["status"] = "invalid_json"
+
+    log(f"    Done {elapsed}s | JSON={is_valid} | elements={result['elements'].get('total', 0)}")
     return result
 
 
@@ -414,8 +354,10 @@ def main():
         result["notes"] = notes
         results.append(result)
 
-        # Save incrementally (so we don't lose progress on crash)
-        RESULTS_JSON.write_text(json.dumps(results, indent=2, default=str))
+        # Atomic incremental save — prevents file corruption on interrupted write
+        _tmp = RESULTS_JSON.with_suffix(".tmp")
+        _tmp.write_text(json.dumps(results, indent=2, default=str))
+        _tmp.rename(RESULTS_JSON)
 
     write_summary(results)
     log("\n" + "=" * 80)
