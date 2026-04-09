@@ -1,0 +1,100 @@
+[
+  {
+    "model": "qwen3.5:0.8b",
+    "status": "invalid_json",
+    "inference_time_s": 38.21,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "parse failed: ",
+    "description": "Qwen3.5 0.8B \u2014 tiny thinking (not VL)",
+    "approx_gb": 1.0
+  },
+  {
+    "model": "qwen3.5:4b",
+    "status": "invalid_json",
+    "inference_time_s": 64.77,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "parse failed: ",
+    "description": "Qwen3.5 4B \u2014 mid thinking (not VL)",
+    "approx_gb": 3.4
+  },
+  {
+    "model": "qwen3-vl:2b",
+    "status": "invalid_json",
+    "inference_time_s": 46.4,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "parse failed: ",
+    "description": "Qwen3-VL 2B \u2014 smallest Qwen vision",
+    "approx_gb": 1.9
+  },
+  {
+    "model": "qwen3-vl:8b",
+    "status": "invalid_json",
+    "inference_time_s": 180.26,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "parse failed: ",
+    "description": "Qwen3-VL 8B \u2014 largest tested Qwen vision",
+    "approx_gb": 6.1
+  },
+  {
+    "model": "ministral-3:3b",
+    "status": "success",
+    "inference_time_s": 66.91,
+    "json_valid": true,
+    "raw_output": "[\n    {\"element_type\": \"column\", \"coordinates\": [100, 100, 130, 150], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [150, 100, 180, 150], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [200, 100, 230, 150], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [230, 100, 260, 150], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [280, 100, 310, 150], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [320, 100, 350, 150], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [350, 100, 380, 170], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [380, 100, 410, 170], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [410, 100, 440, 170], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [440, 100, 470, 170], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [470, 100, 500, 170], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [500, 100, 530, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [530, 100, 560, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [560, 100, 590, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [590, 100, 620, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [620, 100, 650, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [650, 100, 680, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [680, 100, 710, 170], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [710, 100, 740, 170], \"confidence\": 00.9, \"shape\": \"rectangle\"},\n\n    {\"element_type\": \"column\", \"coordinates\": [120, 200, 150, 250], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [180, 200, 210, 250], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [230, 200, 260, 250], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [310, 200, 340, 250], \"confidence\": 0.95, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [380, 200, 410, 250], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [470, 200, 500, 250], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [530, 200, 560, 250], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\", \"coordinates\": [590, 200, 620, 250], \"confidence\": 0.9, \"shape\": \"rectangle\"},\n    {\"element_type\": \"column\"",
+    "elements": {
+      "total": 80,
+      "columns": 53,
+      "grid_lines": 27,
+      "other": 0,
+      "valid_coords": 80,
+      "valid_conf": 80
+    },
+    "error": "",
+    "description": "Ministral 3B \u2014 Mistral edge (no vision encoder)",
+    "approx_gb": 3.0
+  },
+  {
+    "model": "glm-ocr:latest",
+    "status": "success",
+    "inference_time_s": 20.01,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [120, 340, 155, 375], \"confidence\": 0.92, \"shape\": \"square\"},\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [0, 500, 1280, 500], \"confidence\": 0.85, \"shape\": \"horizontal\"}\n  ]\n}\n```",
+    "elements": {
+      "total": 2,
+      "columns": 1,
+      "grid_lines": 1,
+      "other": 0,
+      "valid_coords": 2,
+      "valid_conf": 2
+    },
+    "error": "",
+    "description": "GLM-OCR \u2014 THUDM document OCR",
+    "approx_gb": 2.2
+  },
+  {
+    "model": "gemma3:12b",
+    "status": "success",
+    "inference_time_s": 228.76,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      122,\n      243,\n      157,\n      278\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      377,\n      243,\n      412,\n      278\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      632,\n      243,\n      667,\n      278\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      900,\n      243,\n      935,\n      278\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"column\",\n    \"coordinates\": [\n      1165,\n      243,\n      1200,\n      278\n    ],\n    \"confidence\": 0.95,\n    \"shape\": \"square\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      227,\n      1280,\n      227\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      278,\n      1280,\n      278\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      329,\n      1280,\n      329\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      380,\n      1280,\n      380\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      431,\n      1280,\n      431\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      482,\n      1280,\n      482\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      533,\n      1280,\n      533\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      584,\n      1280,\n      584\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      635,\n      1280,\n      635\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      686,\n      1280,\n      686\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      737,\n      1280,\n      737\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      788,\n      1280,\n      788\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      839,\n      1280,\n      839\n    ],\n    \"confidence\": 0.90,\n    \"shape\": \"horizontal\"\n  },\n  {\n    \"element_type\": \"grid_line\",\n    \"coordinates\": [\n      0,\n      890,\n      1280,\n      890\n  ",
+    "elements": {
+      "total": 26,
+      "columns": 5,
+      "grid_lines": 21,
+      "other": 0,
+      "valid_coords": 26,
+      "valid_conf": 26
+    },
+    "error": "",
+    "description": "Gemma 3 12B \u2014 Google large vision",
+    "approx_gb": 8.1
+  }
+]
