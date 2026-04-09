@@ -507,3 +507,32 @@ BUDGET BREAKDOWN (if you buy)
 ================================================================================
 END OF REPORT
 ================================================================================
+claude --max-turns 80 -p "$(cat find_vision_model_prompt.md)"
+
+
+================================================================================
+  MINISTRAL-3:14B TEST (tested 2026-04-09)
+================================================================================
+
+[35] ministral-3:14b          ~9.1 GB    Score: 0/6   TIMEOUT
+     Detections : 0
+     Inference time: 676.49s (exceeded 300s limit)
+     Failure reason: Model is 9.1 GB on an 8 GB VRAM GPU — significant CPU offload
+     required. Inference took 676s (>11 minutes) before the 300s timeout was hit.
+     No output was produced within the timeout window.
+     NOTE: ministral-3:14b DOES exist on Ollama (tag was incorrectly marked as
+     non-existent in the Round 4 skipped list). It was pulled successfully at 9.1 GB.
+     Like llama3.2-vision:11b ([5]), this is a VRAM bottleneck — not a model capability
+     issue. Whether it can actually detect columns is unknown; it never completed inference.
+     On a 24 GB+ VRAM GPU it would likely finish in ~60-120s.
+     JSON rate: 0% (timed out)   Actual inference time: 676s
+
+  NOTE: Previously listed as "does not exist on Ollama" in Round 4 skipped models —
+  this was incorrect. The tag is valid and the model downloaded successfully.
+
+
+================================================================================
+  UPDATED CUMULATIVE TOTAL: 0 / 35 models passed across all rounds
+================================================================================
+END OF REPORT
+================================================================================

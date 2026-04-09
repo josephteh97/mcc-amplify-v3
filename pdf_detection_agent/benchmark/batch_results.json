@@ -96,5 +96,79 @@
     "error": "",
     "description": "Gemma 3 12B \u2014 Google large vision",
     "approx_gb": 8.1
+  },
+  {
+    "model": "gemma4:e4b",
+    "status": "success",
+    "inference_time_s": 245.13,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\"element_type\": \"column\", \"coordinates\": [100, 190, 130, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [130, 190, 160, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [160, 190, 190, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [190, 190, 220, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [220, 190, 250, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [250, 190, 280, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [280, 190, 310, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [310, 190, 340, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [340, 190, 370, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [370, 190, 400, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [400, 190, 430, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [430, 190, 460, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [460, 190, 490, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [490, 190, 520, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [520, 190, 550, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [550, 190, 580, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [580, 190, 610, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [610, 190, 640, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [640, 190, 670, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [670, 190, 700, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [700, 190, 730, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [730, 190, 760, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [760, 190, 790, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [790, 190, 820, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [820, 190, 850, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [850, 190, 880, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [880, 190, 910, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [910, 190, 940, 220], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"co",
+    "elements": {
+      "total": 73,
+      "columns": 73,
+      "grid_lines": 0,
+      "other": 0,
+      "valid_coords": 73,
+      "valid_conf": 73
+    },
+    "error": "",
+    "description": "Gemma 4 Effective 4B \u2014 Google edge vision",
+    "approx_gb": 4.0
+  },
+  {
+    "model": "gemma4:latest",
+    "status": "success",
+    "inference_time_s": 219.85,
+    "json_valid": true,
+    "raw_output": "```json\n[\n  {\"element_type\": \"column\", \"coordinates\": [100, 180, 130, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [130, 180, 160, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [160, 180, 190, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [190, 180, 220, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [220, 180, 250, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [250, 180, 280, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [280, 180, 310, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [310, 180, 340, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [340, 180, 370, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [370, 180, 400, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [400, 180, 430, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [430, 180, 460, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [460, 180, 490, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [490, 180, 520, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [520, 180, 550, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [550, 180, 580, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [580, 180, 610, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [610, 180, 640, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [640, 180, 670, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [670, 180, 700, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [700, 180, 730, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [730, 180, 760, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [760, 180, 790, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [790, 180, 820, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [820, 180, 850, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [850, 180, 880, 210], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [100, 300, 130, 330], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"column\", \"coordinates\": [130, 300, 160, 330], \"confidence\": 0.95, \"shape\": \"square\"},\n  {\"element_type\": \"co",
+    "elements": {
+      "total": 73,
+      "columns": 73,
+      "grid_lines": 0,
+      "other": 0,
+      "valid_coords": 73,
+      "valid_conf": 73
+    },
+    "error": "",
+    "description": "Gemma 4 latest \u2014 Google vision (alias)",
+    "approx_gb": 4.0
+  },
+  {
+    "model": "qwen3-vl:latest",
+    "status": "invalid_json",
+    "inference_time_s": 188.43,
+    "json_valid": false,
+    "raw_output": "",
+    "elements": {},
+    "error": "parse failed: ",
+    "description": "Qwen3-VL latest \u2014 largest Qwen vision",
+    "approx_gb": 6.1
+  },
+  {
+    "model": "ministral-3:latest",
+    "status": "success",
+    "inference_time_s": 127.67,
+    "json_valid": true,
+    "raw_output": "```json\n[\n    {\"element_type\": \"grid_line\", \"coordinates\": [100, 100, 100, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [250, 100, 250, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [400, 100, 400, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [550, 100, 550, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [700, 100, 700, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [850, 100, 850, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [1000, 100, 1000, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [1150, 100, 1150, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [1300, 100, 1300, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [1500, 100, 1500, 600], \"confidence\": 1.0, \"shape\": \"vertical\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [100, 150, 1500, 150], \"confidence\": 1.0, \"shape\": \"horizontal\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [100, 300, 1500, 300], \"confidence\": 1.0, \"shape\": \"horizontal\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [100, 450, 1500, 450], \"confidence\": 1.0, \"shape\": \"horizontal\"},\n    {\"element_type\": \"grid_line\", \"coordinates\": [100, 600, 1500, 600], \"confidence\": 1.0, \"shape\": \"horizontal\"},\n\n    {\"element_type\": \"column\", \"coordinates\": [120, 280, 140, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [120, 330, 140, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [180, 280, 200, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [180, 330, 200, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [240, 280, 260, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [240, 330, 260, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [390, 280, 410, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [390, 330, 410, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [440, 280, 460, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [440, 330, 460, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [540, 280, 560, 320], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [540, 330, 560, 370], \"confidence\": 0.95, \"shape\": \"square\"},\n    {\"element_type\": \"column\", \"coordinates\": [690, 280, 710, 320], \"confidence\": 0.95, \"shape\": \"square\"",
+    "elements": {
+      "total": 79,
+      "columns": 65,
+      "grid_lines": 14,
+      "other": 0,
+      "valid_coords": 79,
+      "valid_conf": 79
+    },
+    "error": "",
+    "description": "Ministral 3 latest \u2014 Mistral edge",
+    "approx_gb": 3.0
+  },
+  {
+    "model": "glm-ocr:98_o",
+    "status": "pull_failed",
+    "error": "could not pull",
+    "json_valid": false,
+    "elements": {},
+    "inference_time_s": null,
+    "raw_output": ""
   }
 ]
