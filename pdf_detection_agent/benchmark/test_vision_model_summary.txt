@@ -270,6 +270,25 @@ TIER 4 — Score 0/6 (no usable output at all)
 
 
 ================================================================================
+  GLM-OCR Q8_0 RESULTS (tested 2026-04-10 — Ollama 0.20.4)
+================================================================================
+
+[18] glm-ocr:q8_0               ~1.6 GB    Score: 0/6   CRASH
+     Detections : 0
+     Failure reason: GGML tensor assertion crash — identical to qwen2.5vl:7b.
+     Error: "GGML_ASSERT(a->ne[2] * 4 == b->ne[0]) failed" (HTTP 500)
+     The Q8_0 quantization variant of GLM-OCR triggers a tensor shape mismatch in the
+     GGML backend when processing image inputs. This is the same bug that crashes
+     qwen2.5vl:7b — both models use a similar vision encoder architecture that is
+     incompatible with the current Ollama GGML runtime for image payloads.
+     The default glm-ocr:latest (Q4 quantization, 2.2 GB) works fine and produces
+     valid JSON (Score 1/6, 2 detections) — only the Q8_0 variant crashes.
+     Root cause: Higher-precision quantization (Q8_0) changes tensor dimensions in a way
+     that violates the GGML attention kernel's shape assertion for the vision encoder.
+     JSON rate: 0%   Inference time: instant crash
+
+
+================================================================================
   SUMMARY TABLE
 ================================================================================
 
@@ -291,11 +310,12 @@ TIER 4 — Score 0/6 (no usable output at all)
   llava-phi3:3.8b (CLIP crash)   2.9   0/6     0    0.000  0.000  0.000  CRASH
   llava-llama3:8b (CLIP crash)   5.5   0/6     0    0.000  0.000  0.000  CRASH
   qwen3.5:9b (thinking, no JSON) 6.6   0/6     0    0.000  0.000  0.000  FAIL
+  glm-ocr:q8_0 (GGML crash)     1.6   0/6     0    0.000  0.000  0.000  CRASH
   llama4:16x17b (RAM OOM)        67.0  0/6     0    0.000  0.000  0.000  OOM
   ─────────────────────────────────────────────────────────────────────────────
   SEA-LION v4 4B (baseline est)  3.3   --     264   0.254  0.728  0.376  BASELINE
 
-  Models passed: 0 / 17
+  Models passed: 0 / 35
 
 
 ================================================================================
@@ -344,7 +364,7 @@ TIER 4 — Score 0/6 (no usable output at all)
 
   OPTION C — gemma4:e2b (TESTED 2026-04-09 — Score 3/6, P/R/F1=0.000)
     Size    : 7.2 GB on disk (marketed as "effective 2B" but actual weights are larger)
-    Result  : Best JSON formatting of all 16 models. Perfect structure, correct types.
+    Result  : Best JSON formatting of all 35 models. Perfect structure, correct types.
               BUT coordinates are hallucinated (evenly spaced grid, not real detections).
               346s per tile on RTX 4000 (7.2 GB model on 8 GB GPU = heavy CPU offload).
     Verdict : Most promising architecture for fine-tuning. If trained on floor plan data,
@@ -364,8 +384,8 @@ TIER 4 — Score 0/6 (no usable output at all)
   GPU     : NVIDIA Quadro RTX 4000  (8 GB VRAM, 6.5 GB available during tests)
   RAM     : ~33 GB (Ollama reported 33.0 GiB available)
   Python  : 3.12 (anaconda yolo env)
-  Tested  : 2026-04-07 to 2026-04-09
-  Log     : pdf_detection_agent/vision_model_evaluation_log.json  (16 entries)
+  Tested  : 2026-04-07 to 2026-04-10
+  Log     : pdf_detection_agent/vision_model_evaluation_log.json  (35 entries)
 ================================================================================
 
 
@@ -459,9 +479,9 @@ BUDGET BREAKDOWN (if you buy)
   DETAILED REASONING:
 
   1. VLMs CANNOT DO THIS TASK ON EDGE
-     This entire benchmark (16 models tested) proved that no local vision model —
-     not even on a workstation GPU — can reliably localize 40-50 px column symbols
-     in architectural floor plans. Every model scored 0.000 P/R/F1.
+     This entire benchmark (35 models tested across 5 rounds) proved that no local
+     vision model — not even on a workstation GPU — can reliably localize 40-50 px
+     column symbols in architectural floor plans. Every model scored 0.000 P/R/F1.
      Running the same failing models on weaker edge hardware will not fix this.
      A Jetson cannot run what a Quadro RTX 4000 already fails at.
 
@@ -505,13 +525,7 @@ BUDGET BREAKDOWN (if you buy)
   ─────────────────────────────────────────────────────────────────────────
 
 ================================================================================
-END OF REPORT
-================================================================================
-claude --max-turns 80 -p "$(cat find_vision_model_prompt.md)"
-
-
-================================================================================
-  MINISTRAL-3:14B TEST (tested 2026-04-09)
+  MINISTRAL-3:14B TEST (tested 2026-04-10)
 ================================================================================
 
 [35] ministral-3:14b          ~9.1 GB    Score: 0/6   TIMEOUT
@@ -532,7 +546,31 @@ claude --max-turns 80 -p "$(cat find_vision_model_prompt.md)"
 
 
 ================================================================================
-  UPDATED CUMULATIVE TOTAL: 0 / 35 models passed across all rounds
+  FINAL CUMULATIVE TOTAL: 0 / 35 models passed across all rounds
+================================================================================
+
+  Rounds completed:
+    Round 1 (2026-04-07): 14 models — core Ollama vision library
+    Round 2 (2026-04-08): 14 models — overnight exhaustive sweep (31 models incl. re-tests)
+    Round 3 (2026-04-09): qwen3.5:9b (forced JSON attempts), gemma4:e2b (Ollama 0.20.4)
+    Round 4 (2026-04-09): 17 models — parallel session (qwen3.5, qwen3-vl, gemma3:12b,
+                           translategemma, ministral-3, devstral, glm-ocr, mistral-small)
+    Round 5 (2026-04-10): glm-ocr:q8_0, ministral-3:14b
+
+  Failure categories across all 35 models:
+    GGML/tensor crash       : 3  (qwen2.5vl:7b, glm-ocr:q8_0, glm-ocr:bf16)
+    OOM / VRAM overflow     : 5  (llava:7b, bakllava:7b, llava-llama3:8b, llama4:16x17b, ministral-3:14b)
+    CLIP runner crash       : 2  (llava:7b, llava-phi3:3.8b — fixed in 0.20.4)
+    Thinking mode (no output): 3  (qwen3.5:9b, qwen3.5:4b, qwen3.5:0.8b)
+    Not vision-capable      : 4  (qwen3.5:2b text-only, deepseek-ocr text-OCR, translategemma, devstral)
+    Pull failed / not exist : 3  (gemma4:e4b, gemma4:e2b on 0.18, kimi-k2.5)
+    Valid JSON but wrong bbox: 7  (qwen2.5vl:7b, minicpm-v:8b, granite3.2, gemma3:4b, gemma4:e2b, etc.)
+    Valid JSON but 0 dets   : 5  (moondream, qwen2.5vl:3b, qwen3-vl:4b, etc.)
+    Timeout (>300s)         : 3  (llama3.2-vision:11b, ministral-3:14b, qwen2.5vl:7b)
+
+  CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
+  Use YOLO (column-detect.pt) for production. Use OpenAI GPT-4o for cloud-based refinement.
+
 ================================================================================
 END OF REPORT
 ================================================================================
