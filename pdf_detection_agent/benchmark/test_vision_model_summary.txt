@@ -232,6 +232,27 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  Conclusion: strongest memory-injection response seen — anchor phase shows
                  genuine spatial extension (not pure echo). But model cannot generalise to the
                  other 4 column strips; fine-tuning required for reliable detection.
+    Iterative memory test — 4 rounds (2026-04-10):
+                 Seed: 5 GT examples, one per x-strip (Row 1), all 5 columns seeded.
+                 Round 1: found rows 3-4-5 of col 1 only  →  8/25 cells covered
+                 Round 2: found row 2 of col 1; near-row-1 for cols 2-5 (y~62, false)  →  9/25
+                 Round 3: plateau — 15 raw dets, all invalid (degenerate bboxes)  →  9/25
+                 Round 4: plateau — identical to round 3  →  9/25
+                 Final grid (X=covered, .=missing):
+                   row1: X X X X X   (seed + round 2 near-border)
+                   row2: X . . . .
+                   row3: X . . . .
+                   row4: X . . . .
+                   row5: X . . . .
+                 Findings:
+                   - Model consistently explores DOWN its first anchor column (col1)
+                     rather than generalising ACROSS to other column strips (cols 2-5),
+                     even when all 5 strips are seeded.
+                   - Memory context beyond ~20 entries causes reversion to degenerate
+                     zero-width bboxes — context overload collapses the output quality.
+                   - Maximum coverage: 9/25 cells (36%); cols 2-5 beyond row1 never found.
+                   - Episodic memory alone cannot bootstrap full detection.
+                     Fine-tuning on annotated floor plan data is the required next step.
 
 [6] llama3.2-vision:11b      ~7.9 GB    Score: 2/6   FAIL   * STRONGEST ARCHITECTURE
     Detections : 4 after NMS
