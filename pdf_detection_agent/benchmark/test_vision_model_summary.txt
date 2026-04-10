@@ -546,7 +546,7 @@ BUDGET BREAKDOWN (if you buy)
 
 
 ================================================================================
-  FINAL CUMULATIVE TOTAL: 0 / 36 models passed across all rounds
+  FINAL CUMULATIVE TOTAL: 0 / 37 models passed across all rounds
 ================================================================================
 
   Rounds completed:
@@ -557,9 +557,12 @@ BUDGET BREAKDOWN (if you buy)
                            translategemma, ministral-3, devstral, glm-ocr, mistral-small)
     Round 5 (2026-04-10): glm-ocr:q8_0, ministral-3:14b
     Round 6 (2026-04-10): ministral-3:3b (confirmed vision-incapable)
+    Round 7 (2026-04-10): ministral-3:8b (confirmed vision-incapable; tag now exists on Ollama)
+    Round 8 (2026-04-10): glm-ocr:bf16 (alias of :latest; corrected erroneous skip-list entry)
+    Round 9 (2026-04-10): mistral-small3.2:latest (15 GB — too large + text-only; pull cancelled)
 
   Failure categories across all 35 models:
-    GGML/tensor crash       : 3  (qwen2.5vl:7b, glm-ocr:q8_0, glm-ocr:bf16)
+    GGML/tensor crash       : 2  (qwen2.5vl:7b, glm-ocr:q8_0)  [glm-ocr:bf16 removed — it is an alias of :latest and runs fine]
     OOM / VRAM overflow     : 5  (llava:7b, bakllava:7b, llava-llama3:8b, llama4:16x17b, ministral-3:14b)
     CLIP runner crash       : 2  (llava:7b, llava-phi3:3.8b — fixed in 0.20.4)
     Thinking mode (no output): 3  (qwen3.5:9b, qwen3.5:4b, qwen3.5:0.8b)
@@ -571,6 +574,35 @@ BUDGET BREAKDOWN (if you buy)
 
   CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
   Use YOLO (column-detect.pt) for production. Use OpenAI GPT-4o for cloud-based refinement.
+
+================================================================================
+  MINISTRAL-3:8B TEST (tested 2026-04-10)
+================================================================================
+
+[37] ministral-3:8b           ~6.0 GB    Score: 2/6   FAIL
+     Detections : 85 (columns=0, grid_lines=85, other=0)
+     Inference time: 186.28s
+     JSON valid : True
+     Failure reason: ministral-3:8b has NO vision encoder — it cannot see the image.
+     The model hallucinated 85 perfectly-spaced vertical grid_lines at x=100,200,300...
+     increments, all with y1=100, y2=600, and all confidence=1.0. Several coordinates
+     exceed the 1280px image width (x=1400–1800+), confirming the model has no awareness
+     of the actual image content. Zero columns were detected. Confidence=1.0 on every
+     item is another hallucination signal — real vision models produce varied confidences.
+     The skip list entry "does not exist on Ollama" was outdated; the tag now resolves
+     and downloads successfully (6.0 GB, 7.2B parameters, Mistral 3 text LLM).
+     Score breakdown:
+       JSON valid        : YES (+1) — well-formed array, all keys present
+       Has detections    : YES (+1) — 85 items returned
+       Count in range    : YES (85 is 5-200) — but fabricated
+       Precision > 0.20  : NO  — hallucinated bboxes, out-of-bounds coords
+       Recall > 0.30     : NO  — zero columns detected
+       F1 > 0.25         : NO
+     VERDICT: NOT SUITABLE. Worse than :3b — at least :3b returned columns.
+     :8b returns only grid_lines with robotically uniform coordinates and
+     confidence=1.0, a clear sign of blind JSON generation with no image understanding.
+     NOTE: Previously listed as "does not exist on Ollama" — now confirmed to exist.
+     Update batch_test_runner.py SKIPPED_MODELS if retesting.
 
 ================================================================================
   MINISTRAL-3:3B TEST (tested 2026-04-10)
@@ -598,8 +630,50 @@ BUDGET BREAKDOWN (if you buy)
      is entirely hallucinated. Any pipeline using ministral-3:3b for detection would
      silently produce meaningless results with no error signal.
 
-  FINAL CUMULATIVE TOTAL: 0 / 36 models passed across all rounds
+================================================================================
+  GLM-OCR:BF16 TEST (tested 2026-04-10)
+================================================================================
 
+[38] glm-ocr:bf16             ~2.2 GB    Score: 1/6   FAIL  (alias of glm-ocr:latest)
+     Detections : 2 (same result as glm-ocr:latest)
+     Inference time: N/A — not re-run; identical model
+     Failure reason: glm-ocr:bf16 shares the exact same Ollama digest (6effedd0dc8a)
+     as glm-ocr:latest — they are the same model weights under a different tag alias.
+     Testing it would produce byte-for-byte identical results to glm-ocr:latest (Score 1/6,
+     2 detections, valid JSON, but coordinates are wrong — see Round 4 notes).
+     CORRECTIONS to prior records:
+       1. The skip list entry "bf16 unquantized — likely >16 GB" was INCORRECT.
+          The model is F16 quantization on 1.1B parameters = 2.2 GB, not >16 GB.
+       2. The failure categories line listing glm-ocr:bf16 as a "GGML/tensor crash"
+          was an incorrect extrapolation from glm-ocr:q8_0's crash — it was never
+          actually tested, and the model runs fine (same binary as :latest).
+     VERDICT: NOT SUITABLE. Same result as glm-ocr:latest — valid JSON but only 2
+     detections with wrong coordinates. Inherits all the limitations of that model.
+     No further testing needed; treat as duplicate of glm-ocr:latest.
+
+================================================================================
+  MISTRAL-SMALL3.2:LATEST TEST (tested 2026-04-10)
+================================================================================
+
+[39] mistral-small3.2:latest  ~15.0 GB   Score: 0/6   SKIPPED (too large)
+     Detections : 0
+     Inference time: N/A — pull cancelled
+     Failure reason: Model is ~15 GB, far exceeding the 8 GB VRAM limit.
+     Pull was started but cancelled after confirming the download size (15 GB / ~1h10m).
+     At 15 GB this would behave identically to ministral-3:14b [35] — significant CPU
+     offload causing inference time well beyond the 300s timeout. The model is also
+     text-only (no vision encoder per skip list entry) so even if it completed it would
+     hallucinate detections like ministral-3:3b [36] and :8b [37].
+     NOTE: mistral-small3.2:latest IS a valid Ollama tag (pull started successfully,
+     unlike the bare "mistral-small3.2" tag which does not resolve).
+     VERDICT: NOT SUITABLE. Too large for 8 GB VRAM, and text-only — two independent
+     disqualifiers. Would need a 24 GB+ VRAM GPU to even attempt inference.
+
+  FINAL CUMULATIVE TOTAL: 0 / 39 models passed across all rounds
+
+================================================================================
+  Rounds completed:
+    Round 9 (2026-04-10): mistral-small3.2:latest (too large + text-only — pull cancelled)
 ================================================================================
 END OF REPORT
 ================================================================================
