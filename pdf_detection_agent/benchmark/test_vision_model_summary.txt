@@ -560,6 +560,7 @@ BUDGET BREAKDOWN (if you buy)
     Round 7 (2026-04-10): ministral-3:8b (confirmed vision-incapable; tag now exists on Ollama)
     Round 8 (2026-04-10): glm-ocr:bf16 (alias of :latest; corrected erroneous skip-list entry)
     Round 9 (2026-04-10): mistral-small3.2:latest (15 GB — too large + text-only; pull cancelled)
+    Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT 987s; has vision but VRAM-constrained)
 
   Failure categories across all 35 models:
     GGML/tensor crash       : 2  (qwen2.5vl:7b, glm-ocr:q8_0)  [glm-ocr:bf16 removed — it is an alias of :latest and runs fine]
@@ -669,11 +670,35 @@ BUDGET BREAKDOWN (if you buy)
      VERDICT: NOT SUITABLE. Too large for 8 GB VRAM, and text-only — two independent
      disqualifiers. Would need a 24 GB+ VRAM GPU to even attempt inference.
 
-  FINAL CUMULATIVE TOTAL: 0 / 39 models passed across all rounds
+================================================================================
+  MISTRAL-SMALL3.1:LATEST TEST (tested 2026-04-10)
+================================================================================
+
+[40] mistral-small3.1:latest  ~15.0 GB   Score: 0/6   TIMEOUT
+     Detections : 0
+     Inference time: 986.84s total wall time (300s timeout fired, but thread ran to 987s)
+     JSON valid : False — no output produced
+     Failure reason: 15 GB model on 8 GB VRAM causes massive CPU offload.
+     Inference never completed within the 300s limit; the ollama.chat call took 987s total.
+     Worse than ministral-3:14b [35] which ran 676s — the additional 9B parameters
+     (24B vs 14B) add ~5 extra minutes of CPU-offloaded inference.
+     NOTE on elapsed time: utils.py ollama_chat_with_timeout uses ThreadPoolExecutor
+     which raises TimeoutError at 300s but then waits for the thread to fully complete
+     (executor.shutdown(wait=True) in the context manager __exit__). The reported
+     986s is the true wall time of the Ollama request, not the Python timeout.
+     NOTE on vision: The skip list said "text-only LLM — no vision encoder" but
+     `ollama show` confirms it HAS vision capability. The suitability question is moot
+     given the VRAM constraint — it cannot produce output on this hardware.
+     Same digest as mistral-small3.1:24b (b9aaf0c2586a) — identical model.
+     VERDICT: NOT SUITABLE. VRAM bottleneck makes inference impossible on 8 GB GPU.
+     Would need 24 GB+ VRAM to complete within the 300s timeout.
+
+  FINAL CUMULATIVE TOTAL: 0 / 40 models passed across all rounds
 
 ================================================================================
   Rounds completed:
     Round 9 (2026-04-10): mistral-small3.2:latest (too large + text-only — pull cancelled)
+    Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT at 987s; has vision but VRAM-constrained)
 ================================================================================
 END OF REPORT
 ================================================================================
