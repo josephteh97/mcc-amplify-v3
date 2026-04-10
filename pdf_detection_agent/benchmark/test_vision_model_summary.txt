@@ -561,6 +561,7 @@ BUDGET BREAKDOWN (if you buy)
     Round 8 (2026-04-10): glm-ocr:bf16 (alias of :latest; corrected erroneous skip-list entry)
     Round 9 (2026-04-10): mistral-small3.2:latest (15 GB — too large + text-only; pull cancelled)
     Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT 987s; has vision but VRAM-constrained)
+    Round 11 (2026-04-10): mistral-small3.1:24b (alias of :latest — same digest b9aaf0c2586a)
 
   Failure categories across all 35 models:
     GGML/tensor crash       : 2  (qwen2.5vl:7b, glm-ocr:q8_0)  [glm-ocr:bf16 removed — it is an alias of :latest and runs fine]
@@ -693,12 +694,25 @@ BUDGET BREAKDOWN (if you buy)
      VERDICT: NOT SUITABLE. VRAM bottleneck makes inference impossible on 8 GB GPU.
      Would need 24 GB+ VRAM to complete within the 300s timeout.
 
-  FINAL CUMULATIVE TOTAL: 0 / 40 models passed across all rounds
+================================================================================
+  MISTRAL-SMALL3.1:24B TEST (tested 2026-04-10)
+================================================================================
+
+[41] mistral-small3.1:24b     ~15.0 GB   Score: 0/6   TIMEOUT  (alias of :latest)
+     Detections : 0
+     Inference time: N/A — not re-run; identical model to [40]
+     Failure reason: mistral-small3.1:24b shares the exact same Ollama digest
+     (b9aaf0c2586a) as mistral-small3.1:latest [40] — same 15 GB weights, same result.
+     Testing it would produce identical output: timeout at ~987s wall time, 0 detections.
+     VERDICT: NOT SUITABLE. Identical to [40] in every respect.
+
+  FINAL CUMULATIVE TOTAL: 0 / 41 models passed across all rounds
 
 ================================================================================
   Rounds completed:
     Round 9 (2026-04-10): mistral-small3.2:latest (too large + text-only — pull cancelled)
     Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT at 987s; has vision but VRAM-constrained)
+    Round 11 (2026-04-10): mistral-small3.1:24b (alias of :latest — same digest, same result)
 ================================================================================
 END OF REPORT
 ================================================================================
