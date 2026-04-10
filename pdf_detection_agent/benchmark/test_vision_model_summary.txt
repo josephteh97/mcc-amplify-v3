@@ -50,7 +50,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
    1    gemma4:e4b                9.6     3/6    73    0.000  0.000  0.000   FAIL
    1=   gemma4:latest             9.6     3/6    73    0.000  0.000  0.000   FAIL  (= :e4b, same digest)
    2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL
-   3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL
+   3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL  * memory injection tested
    4    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
    5    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL
    6    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
@@ -152,11 +152,21 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                   Only gemma3:12b (f4031aab637d) was tested here.
 
 [2] qwen2.5vl:7b             ~6.0 GB    Score: 3/6   FAIL
-    Detections : 12 after NMS
-    Inference  : ~160s/tile (partial CPU offload)
-    JSON rate  : 75% (3/4 tiles — 1 tile hit GGML tensor assertion crash under VRAM pressure)
-    Failure    : Bounding boxes do not overlap any GT column (IoU=0 on all 12). Finds
-                 approximate structural regions but cannot localize 40-50 px column symbols.
+    Detections : Original: 12 after NMS  |  Retest baseline: 11  |  Memory injection: 5
+    Inference  : ~160-274s/tile (partial CPU offload; 1024x1024 input)
+    JSON rate  : 75% (original 4-tile run — 1 tile hit GGML tensor assertion under VRAM pressure)
+    Failure    : HALLUCINATION CONFIRMED (retest 2026-04-10):
+                 Baseline — 11 dets on perfect diagonal: [100,100], [200,200], ..., [1100,1100].
+                 All conf=0.9 exactly, all 20x20 px boxes. Zero real detections.
+    Episodic memory test (2026-04-10):
+                 Injected 5 confirmed GT boxes (leftmost column, one per row) into the prompt
+                 as "confirmed examples — use as visual anchors to find remaining columns."
+                 Result: model returned exactly those 5 examples verbatim — bbox values are
+                 pixel-perfect copies of the injected GT. It did NOT use them as anchors to
+                 find new columns; it treated the examples as the complete answer.
+                 Conclusion: episodic memory injection DOES NOT work for this model.
+                 The model cannot do zero-shot visual grounding of 40-50 px structural symbols
+                 and cannot use in-context examples to guide new detections.
 
 [3] minicpm-v:8b             ~5.5 GB    Score: 3/6   FAIL
     Detections : 9 after NMS
@@ -645,7 +655,7 @@ BUDGET BREAKDOWN (if you buy)
      1  gemma4:e4b                 9.6   3/6    73    FAIL          No   Hallucinated coords; 73 cols packed in single row
     1=  gemma4:latest              9.6   3/6    73    FAIL          No   Alias of :e4b (same digest)
      2  gemma3:12b                 8.1   3/6   26/30  FAIL          No   Hallucination confirmed (2 runs): fabricated uniform grids, different each time
-     3  qwen2.5vl:7b               6.0   3/6    12    FAIL          No   Valid JSON; bounding box coords incorrect
+     3  qwen2.5vl:7b               6.0   3/6    12    FAIL          No   Hallucination confirmed; episodic memory injection echoes examples, no new detections
      4  gemma4:e2b                 7.2   3/6     9    FAIL          No   Hallucinated even-spaced coords (x=200,300,400,500)
      5  minicpm-v:8b               5.5   3/6     9    FAIL          No   Valid JSON; bounding box coords incorrect
      6  granite3.2-vision:2b       1.9   3/6     8    FAIL          No   Valid JSON; bounding box coords incorrect
