@@ -1,7 +1,7 @@
 ================================================================================
   OLLAMA VISION MODEL BENCHMARK — FLOOR PLAN COLUMN DETECTION
   Task: Detect structural columns in architectural PDF floor plan
-  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 11  |  Ranked: 27 unique + 2 aliases  |  Excluded: 5
+  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 11  |  Ranked: 32 unique + 4 aliases  |  Excluded: 4
 ================================================================================
 
 TEST SETUP
@@ -27,7 +27,6 @@ Pass threshold: >=4/6 points
 
 EXCLUDED FROM RANKING (never ran — pull failed or size prohibitive)
 ---------------------------------------------------------------------
-  gemma4:e4b              — pull cancelled; would OOM worse than gemma4:e2b (~4 GB, VRAM limit)
   kimi-k2.5               — pull failed; tag does not exist on Ollama
   glm-ocr:98_o            — pull failed; tag does not exist on Ollama
   mistral-small3.2        — pull failed; bare tag (without :latest) does not resolve
@@ -42,45 +41,53 @@ BASELINE (SEA-LION v4 4B — the original detection model)
 
 
 ================================================================================
-  COMPLETE RANKED RESULTS  (27 unique + 2 aliases — 0 passed)
+  COMPLETE RANKED RESULTS  (32 unique + 4 aliases — 0 passed)
 ================================================================================
 
+  Note: Rank = position in this table. [N] = detail section entry ID (added in test order).
   Rank  Model                      GB     Score  Dets   P      R      F1     Status
   ──────────────────────────────────────────────────────────────────────────────────
-   1    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
-   2    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL
-   3    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL
-   4    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
-   5    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL
-   6    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
-   7    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
-   8    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL
-   9    ministral-3:3b            3.0     2/6    86    0.000  0.000  0.000   FAIL  (no vision)
-  10    ministral-3:8b            6.0     2/6    85    0.000  0.000  0.000   FAIL  (no vision)
-  11    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL
-  11=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)
-  12    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
-  13    qwen3.5:2b                2.7     1/6     0    0.000  0.000  0.000   FAIL  (text-only)
-  14    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)
-  15    qwen3.5:9b                6.6     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
-  16    qwen3.5:4b               ~3.5     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
-  17    qwen3.5:0.8b             ~0.7     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
-  18    translategemma             —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
-  19    devstral                   —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
-  20    deepseek-ocr:3b           2.0     0/6     0    0.000  0.000  0.000   FAIL  (OCR only)
-  21    ministral-3:14b           9.1     0/6     0     —      —      —      TIMEOUT (676s)
-  22    mistral-small3.1:latest  15.0     0/6     0     —      —      —      TIMEOUT (987–1686s)
-  22=   mistral-small3.1:24b     15.0     0/6     0     —      —      —      TIMEOUT (= :latest, same digest)
-  23    llama4:16x17b            67.0     0/6     0     —      —      —      OOM
-  24    bakllava:7b               4.7     0/6     0     —      —      —      CRASH (CLIP)
-  25    llava:7b                  4.7     0/6     0     —      —      —      CRASH (CLIP)
-  26    llava-llama3:8b           5.5     0/6     0     —      —      —      CRASH (CLIP)
-  27    glm-ocr:q8_0              1.6     0/6     0     —      —      —      CRASH (GGML)
+   1    gemma4:e4b                9.6     3/6    73    0.000  0.000  0.000   FAIL
+   1=   gemma4:latest             9.6     3/6    73    0.000  0.000  0.000   FAIL  (= :e4b, same digest)
+   2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL
+   3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL
+   4    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
+   5    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL
+   6    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
+   7    ministral-3:latest        6.0     2/6    79    0.000  0.000  0.000   FAIL  (no vision)
+   8    ministral-3:3b            3.0     2/6    86    0.000  0.000  0.000   FAIL  (no vision)
+   9    ministral-3:8b            6.0     2/6    85    0.000  0.000  0.000   FAIL  (no vision)
+  10    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL
+  11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
+  12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
+  13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL
+  14    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL
+  14=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)
+  15    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
+  16    qwen3.5:2b                2.7     1/6     0    0.000  0.000  0.000   FAIL  (text-only)
+  17    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)
+  18    qwen3.5:9b                6.6     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  19    qwen3-vl:2b               1.9     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  20    qwen3-vl:8b               6.1     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  20=   qwen3-vl:latest           6.1     0/6     0    0.000  0.000  0.000   FAIL  (= :8b, same digest)
+  21    qwen3.5:4b               ~3.5     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  22    qwen3.5:0.8b             ~0.7     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  23    translategemma             —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
+  24    devstral                   —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
+  25    deepseek-ocr:3b           2.0     0/6     0    0.000  0.000  0.000   FAIL  (OCR only)
+  26    ministral-3:14b           9.1     0/6     0     —      —      —      TIMEOUT (676s)
+  27    mistral-small3.1:latest  15.0     0/6     0     —      —      —      TIMEOUT (987–1686s)
+  27=   mistral-small3.1:24b     15.0     0/6     0     —      —      —      TIMEOUT (= :latest, same digest)
+  28    llama4:16x17b            67.0     0/6     0     —      —      —      OOM
+  29    bakllava:7b               4.7     0/6     0     —      —      —      CRASH (CLIP)
+  30    llava:7b                  4.7     0/6     0     —      —      —      CRASH (CLIP)
+  31    llava-llama3:8b           5.5     0/6     0     —      —      —      CRASH (CLIP)
+  32    glm-ocr:q8_0              1.6     0/6     0     —      —      —      CRASH (GGML)
   ──────────────────────────────────────────────────────────────────────────────────
        SEA-LION v4 4B (baseline)  3.3      —    264   0.254  0.728  0.376   BASELINE
 
-  Models passed: 0 / 29
-  (27 unique models + 2 alias tags sharing a digest with an already-ranked model)
+  Models passed: 0 / 32
+  (32 unique models + 4 alias tags sharing a digest with an already-ranked model)
 
 
 ================================================================================
@@ -108,7 +115,37 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  plausible-but-wrong coordinates; trained on floor plan data, gemma4's
                  structured output capability could produce accurate results.
     NOTE       : Requires Ollama >=0.20.4 (fails on <=0.18.x).
-                 gemma4:e4b excluded — pull failed (VRAM).
+
+[28] gemma4:e4b              ~9.6 GB    Score: 3/6   FAIL
+     Detections : 73 (73 columns + 0 grid lines)
+     Inference  : 245s (9.6 GB on 8 GB VRAM — heavy CPU offload)
+     JSON rate  : 100%
+     Failure    : Coordinates hallucinated — 73 columns at tight 30 px x-intervals starting
+                  from x=100 ([100,190,130,220], [130,190,160,220], [160,190,190,220]...).
+                  All columns packed into a single row at y=190-220. Fabricated uniform grid,
+                  not real detections. Box size (30x30 px) is plausible but positions are not.
+     NOTE       : Despite the "e4b" name (effective 4B), this model is physically 9.6 GB
+                  (8B MoE weights on disk, ~4B active per token). Previously and incorrectly
+                  listed as "pull failed / excluded" — it pulled and ran successfully.
+                  Same digest as gemma4:latest (c6eb396dbd59) — identical model.
+
+[28=] gemma4:latest          ~9.6 GB    Score: 3/6   FAIL   (ALIAS of gemma4:e4b)
+      Detections : 73
+      Inference  : 220s
+      Result     : Identical to gemma4:e4b — same Ollama digest (c6eb396dbd59).
+                   Not re-run; result is effectively identical (73 hallucinated columns).
+
+[29] gemma3:12b              ~8.1 GB    Score: 3/6   FAIL
+     Detections : 26 (5 columns + 21 grid lines)
+     Inference  : 229s (8.1 GB on 8 GB VRAM — CPU offload)
+     JSON rate  : 100%
+     Failure    : Coordinates appear geometrically regular. 5 columns all at y=243-278,
+                  evenly spaced at 255 px x-intervals (x=122, 377, 632, 900, 1165) — likely
+                  hallucinated single-row pattern. 21 grid_lines span full image width (0-1280)
+                  at evenly spaced y positions. Box size 35x35 px is correct for GT columns
+                  but positions are not verified (P/R/F1 not evaluated — single-tile batch test).
+     NOTE       : gemma3:12b and gemma3:12b-it-qat are different models (different digests).
+                  Only gemma3:12b (f4031aab637d) was tested here.
 
 [2] qwen2.5vl:7b             ~6.0 GB    Score: 3/6   FAIL
     Detections : 12 after NMS
@@ -197,6 +234,19 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                   Uniform confidence=1.0 is a hallucination signal — real models vary.
      NOTE       : Worse than :3b (zero columns detected vs 54). Both are unsuitable.
 
+[30] ministral-3:latest      ~6.0 GB    Score: 2/6   FAIL   (NO VISION ENCODER)
+     Detections : 79 (65 columns + 14 grid lines)
+     Inference  : 128s total
+     JSON rate  : 100% (hallucinated — no image analysis)
+     Failure    : Despite `ollama show` listing "vision" capability, behaves identically
+                  to :3b and :8b — ignores the image and hallucinates structured JSON.
+                  Confidence=1.0 on all 79 items; coordinates follow the same regular
+                  stepped pattern (250 px grid_line intervals, 30 px column intervals).
+     NOTE       : ministral-3:latest is 8.9B parameters, 6.0 GB. Likely the same weights
+                  as ministral-3:8b (same size); digest comparison not confirmed as :8b
+                  was unloaded before cross-check. Both produce identical hallucination
+                  signatures — treat as the same model family.
+
 
 ================================================================================
   TIER 3 — Score 1/6
@@ -271,6 +321,29 @@ BASELINE (SEA-LION v4 4B — the original detection model)
      Detections : 0
      Failure    : Thinking model — same behaviour as :9b / :4b. Even the smallest qwen3.5
                   variant refuses to emit coordinates it cannot verify.
+
+[31] qwen3-vl:2b             ~1.9 GB    Score: 0/6   FAIL
+     Detections : 0
+     Inference  : 46s
+     JSON rate  : 0% (empty output)
+     Failure    : Thinking+vision hybrid. Produced no visible output — entire token budget
+                  consumed by internal chain-of-thought reasoning with nothing emitted to the
+                  response field. Same failure mode as qwen3.5:9b [15]. Despite being the
+                  smallest qwen3-vl, the thinking layer overrides the vision output path.
+
+[32] qwen3-vl:8b             ~6.1 GB    Score: 0/6   FAIL
+     Detections : 0
+     Inference  : 180s
+     JSON rate  : 0% (empty output)
+     Failure    : Same thinking+vision failure as qwen3-vl:2b [31] — no output emitted.
+                  180s inference suggests the model ran and thought extensively but never
+                  produced a final response.
+
+[32=] qwen3-vl:latest        ~6.1 GB    Score: 0/6   FAIL   (ALIAS of qwen3-vl:8b)
+      Detections : 0
+      Inference  : 188s
+      Result     : Same Ollama digest as qwen3-vl:8b (901cae732162) — identical model.
+                   Not re-run; produces the same empty thinking-mode output.
 
 [18] translategemma            —        Score: 0/6   FAIL   (NO VISION ENCODER)
      Detections : 0
