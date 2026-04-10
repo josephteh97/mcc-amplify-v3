@@ -1,14 +1,17 @@
 ================================================================================
   OLLAMA VISION MODEL BENCHMARK — FLOOR PLAN COLUMN DETECTION
   Task: Detect structural columns in architectural PDF floor plan
-  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 11  |  Ranked: 32 unique + 4 aliases  |  Excluded: 4
+  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 12  |  Ranked: 32 unique + 4 aliases  |  Excluded: 4
 ================================================================================
 
 TEST SETUP
 ----------
 PDF          : 2aad5b45-ce32-40a6-a00d-e5b0e67f5d08.pdf  (A2 floor plan, 1285x1273 px @ 150 DPI)
-Ground truth : 67 confirmed column boxes from human corrections in detections.db
-               (25 "add" corrections excluded — coordinates bogus [0,0,...] due to feedback UI bug)
+Ground truth : 67 confirmed column boxes from detections.db (original benchmark runs)
+               NOTE (2026-04-10): DB GT was annotated on a DIFFERENT tile (hash mismatch).
+               Corrected GT = 86 columns from human-annotated image (red circle annotations),
+               extracted via CV red-pixel detection. Used for all gemma4:e4b memory/harness
+               tests. CV template-matching validator achieved F1=0.94 (84/86 TP) on same tile.
 Tiling       : 1280x1280 px sliding window, step 1080, 200 px overlap → 4 tiles per page
                Tile 0 (offset 0,0) covers 99% of the page — all 67 GT boxes are here
 Vision size  : Tiles resized to 1024x1024 before sending to model (768x768 for minicpm-v)
@@ -47,7 +50,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   Note: Rank = position in this table. [N] = detail section entry ID (added in test order).
   Rank  Model                      GB     Score  Dets   P      R      F1     Status
   ──────────────────────────────────────────────────────────────────────────────────
-   1    gemma4:e4b                9.6     3/6    73    0.000  0.000  0.000   FAIL
+   1    gemma4:e4b                9.6     3/6    73    0.000  0.000  0.000   FAIL  * memory injection tested + visual harness tested
    1=   gemma4:latest             9.6     3/6    73    0.000  0.000  0.000   FAIL  (= :e4b, same digest)
    2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL
    3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL  * memory injection tested
@@ -61,8 +64,8 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
   12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
   13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL  * memory injection tested
-  14    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL
-  14=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)
+  14    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL  * memory injection tested
+  14=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)  * memory injection tested
   15    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
   16    qwen3.5:2b                2.7     1/6     0    0.000  0.000  0.000   FAIL  (text-only)
   17    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)
@@ -70,7 +73,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   19    qwen3-vl:2b               1.9     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
   20    qwen3-vl:8b               6.1     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
   20=   qwen3-vl:latest           6.1     0/6     0    0.000  0.000  0.000   FAIL  (= :8b, same digest)
-  21    qwen3.5:4b               ~3.5     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  21    qwen3.5:4b               ~3.5     0/6     0    0.000  0.000  0.000   FAIL  (thinking)  * memory injection tested
   22    qwen3.5:0.8b             ~0.7     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
   23    translategemma             —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
   24    devstral                   —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
@@ -116,18 +119,67 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  structured output capability could produce accurate results.
     NOTE       : Requires Ollama >=0.20.4 (fails on <=0.18.x).
 
-[28] gemma4:e4b              ~9.6 GB    Score: 3/6   FAIL
-     Detections : 73 (73 columns + 0 grid lines)
-     Inference  : 245s (9.6 GB on 8 GB VRAM — heavy CPU offload)
+[28] gemma4:e4b              ~9.6 GB    Score: 3/6   FAIL   * MEMORY INJECTION + VISUAL HARNESS TESTED
+     Detections : 73 (73 columns + 0 grid lines) — original batch run
+     Inference  : 135–265s/phase (9.6 GB on 8 GB VRAM — heavy CPU offload)
      JSON rate  : 100%
-     Failure    : Coordinates hallucinated — 73 columns at tight 30 px x-intervals starting
-                  from x=100 ([100,190,130,220], [130,190,160,220], [160,190,190,220]...).
-                  All columns packed into a single row at y=190-220. Fabricated uniform grid,
-                  not real detections. Box size (30x30 px) is plausible but positions are not.
+     Failure    : Coordinates hallucinated — original batch run: 73 columns at tight 30 px
+                  x-intervals from x=100, all packed into a single row at y=190-220.
+                  Subsequent retests (3 independent runs) produced different hallucination
+                  patterns each time: vertical strip at x=295, vertical strip at x=78,
+                  horizontal row at y=196-226 — all fabricated uniform grids, none matching
+                  the actual 86 column positions.
      NOTE       : Despite the "e4b" name (effective 4B), this model is physically 9.6 GB
-                  (8B MoE weights on disk, ~4B active per token). Previously and incorrectly
-                  listed as "pull failed / excluded" — it pulled and ran successfully.
-                  Same digest as gemma4:latest (c6eb396dbd59) — identical model.
+                  (8B MoE weights on disk, ~4B active per token). Same digest as
+                  gemma4:latest (c6eb396dbd59) — identical model.
+
+     GT NOTE    : See TEST SETUP above — DB GT (67 boxes) was from a different tile.
+                  All tests below use the corrected 86-box GT.
+
+     ── TEXT-BASED MEMORY INJECTION TEST (2026-04-10, GT=86) ────────────────────────────
+     Tile: 1024×1024 px.  All phases: temperature=0.1, num_predict=8192, keep_alive=0.
+     Phases:
+       BASELINE          : 36 dets  TP= 3  FP=33  FN=83  P=0.08  R=0.04  F1=0.05
+       ANCHOR (10 GT→find remaining): 34 dets  TP= 3  FP=31  FN=83  P=0.09  R=0.04  F1=0.05
+       ADD-ONLY round 1  :  2 dets  TP= 0  FP= 2  FN=86  P=0.00  R=0.00  F1=0.00
+       ADD-ONLY round 2  :  6 dets  TP= 0  FP= 6  FN=86  P=0.00  R=0.00  F1=0.00
+     Findings:
+       - Baseline: hallucinates 36 boxes stacked in a vertical strip at x=295 (even y-steps).
+       - Anchor phase: given 10 correct GT positions, ignores them entirely and
+         generates a new unrelated hallucination pattern.
+       - Add-only: after seeing accumulated pool, collapses to 2–6 random guesses (F1=0.00).
+       - Memory injection makes performance WORSE in rounds 3-4.
+       - Conclusion: text-based episodic memory injection has zero effect on spatial
+         localisation. Model cannot use coordinate hints to guide visual search.
+
+     ── VISUAL HARNESS TEST (2026-04-10, GT=86, 3 independent runs) ─────────────────────
+     Harness design: reference images (column patches, annotated crops, reference panels)
+     sent alongside the main tile in the same prompt, in 5 configurations.
+     Results across 3 runs (non-deterministic at temperature=0.1):
+
+       Phase                      Run1        Run2        Run3 (best)
+       BASELINE (tile only)       F1=0.00     F1=0.071    F1=0.14   TP=11
+       PATCH-REFS (8 patches+tile)F1=0.00     F1=0.00     F1=0.00
+       PANEL-REF (panel+tile)     F1=0.031    F1=0.127    F1=0.00
+       ANNOTATED-CROP (crop+tile) F1=0.094    F1=0.086    F1=0.00
+       PANEL+ANNOT (panel+crop+tile)F1=0.00   F1=0.00     F1=0.00
+
+     Key findings:
+       1. BASELINE outperforms ALL reference-augmented phases in 2 of 3 runs —
+          visual references hurt rather than help.
+       2. PATCH-REFS: model switched JSON key from "bbox" to "box_2d" (format
+          confusion), still hallucinated a vertical strip at x=111.
+       3. PANEL-REF: 8-patch grid triggered over-detection (301 boxes, run 1) as
+          model raster-scanned the floor plan matching the panel's grid spacing.
+       4. ANNOTATED-CROP: correct y-levels but x evenly spaced at 140 px (synthetic).
+       5. PANEL+ANNOT: collapses to 12–38 oversized boxes in a single row.
+
+     Root cause: model pattern-matches on prompt/reference structure and invents
+     coordinate grids; it does not locate the actual gray-filled column symbols.
+     More visual context adds more patterns to hallucinate from.
+
+     FINAL VERDICT: Weight-level learning required.
+     YOLO fine-tuning on the 86-box GT is the correct next step.
 
 [28=] gemma4:latest          ~9.6 GB    Score: 3/6   FAIL   (ALIAS of gemma4:e4b)
       Detections : 73
@@ -333,17 +385,31 @@ BASELINE (SEA-LION v4 4B — the original detection model)
 ================================================================================
 
 [11] glm-ocr:latest          ~2.2 GB    Score: 1/6   FAIL
-     Detections : 2
-     JSON rate  : 100%
-     Failure    : GLM-4V OCR model. Returns valid JSON with 2 detections but coordinates
-                  are wrong — optimised for text extraction, not spatial bbox detection.
-     NOTE       : glm-ocr:q8_0 (Q8_0 quantization) crashes with a GGML tensor error (see [27]).
+     Detections : 2 (original)  |  Retest: 0 usable across all configurations
+     JSON rate  : 100% (original)  |  Crash with full-length prompts; works only with short prompts
+     Failure    : GLM-4V OCR model — treats prompt text as document content to extract/reproduce.
+                  Not doing visual spatial reasoning; never locates anything in the image.
+     GGML crash note: full-length detection prompts (400+ chars) + image → GGML tensor assertion
+                  crash (same error as q8_0). Only short prompts (<100 chars) avoid the crash.
+                  Root cause: long prompt context + image tiling exceeds tensor shape expectation.
+    Episodic memory tests (2026-04-10, 1280px input, short prompt):
+                 Baseline: echoed the prompt JSON template verbatim as output text — copied
+                   "bbox":[x1,y1,x2,y2] literally. Zero spatial detection; treats schema as OCR.
+                 Memory-ANCHOR: responded in plain English prose (not JSON), listing the
+                   injected GT coords as a numbered text list. Reads examples as document
+                   content, not as visual anchors.
+                 Memory-ADDONLY: returned partial JSON array of injected GT examples with one
+                   malformed entry (merged GT[3] y2=952 with GT[4] y2=1216 → 300px-tall box).
+                 Conclusion: memory injection makes behaviour WORSE — injected coordinates
+                   become "document text" for the OCR engine to reproduce. Model has NO
+                   spatial detection capability and cannot be improved via prompt engineering.
 
 [11=] glm-ocr:bf16             ~2.2 GB    Score: 1/6   FAIL   (ALIAS of glm-ocr:latest)
       Detections : 2
       JSON rate  : 100%
       Result     : Identical to glm-ocr:latest — same Ollama digest (6effedd0dc8a), same 1.1B
-                   F16 weights. Not re-run; result is byte-for-byte identical.
+                   F16 weights. Memory injection test run on :bf16 tag — behaviour confirmed
+                   identical (see [11] above).
       NOTE       : Skip-list entry "bf16 unquantized — likely >16 GB" was incorrect.
                    Model is F16 on 1.1B parameters = 2.2 GB, not >16 GB.
 
@@ -392,9 +458,18 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                    coordinates it cannot verify precisely. Fine-tuning required.
 
 [16] qwen3.5:4b             ~3.5 GB    Score: 0/6   FAIL
-     Detections : 0
-     Failure    : Thinking model — same behaviour as qwen3.5:9b. Inference budget entirely
-                  consumed by chain-of-thought; no structured output emitted.
+     Detections : 0  (all configs tested)
+     Renderer   : qwen3.5 (plain — NOT qwen3-vl-thinking)
+     Failure    : Thinking model — inference budget consumed silently; NO output of any kind.
+    Retest confirmed non-functional (2026-04-10, 4 phases):
+                 All phases: 0 raw chars, 0 thinking chars, 0 detections.
+                 Elapsed 56-78s per phase — model IS processing but emits nothing.
+                 think=False reduced time 76s→56s (flag has effect) but still 0 output.
+                 Unlike qwen3-vl:4b (which surfaces 16-33K thinking chars), qwen3.5:4b
+                 runs in total silence — no thinking, no response, just consumed tokens.
+                 Most likely text-only (no vision encoder); image ignored; reasoning loop
+                 exhausts num_predict budget without emitting a single character.
+                 Memory injection: not testable — model never produces any output.
 
 [17] qwen3.5:0.8b           ~0.7 GB    Score: 0/6   FAIL
      Detections : 0
@@ -562,7 +637,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   RAM     : ~33 GB (Ollama reported 33.0 GiB available)
   Python  : 3.12 (anaconda yolo env)
   Tested  : 2026-04-07 to 2026-04-10
-  Rounds  : 11
+  Rounds  : 12
   Log     : pdf_detection_agent/benchmark/vision_model_evaluation_log.json
 
   CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
@@ -731,8 +806,8 @@ BUDGET BREAKDOWN (if you buy)
     11  llama3.2-vision:11b        7.9   2/6     4    FAIL         Yes   VRAM limit; 7.9 GB -> heavy CPU offload -> degraded quality
     12  qwen2.5vl:3b               3.2   2/6     1    FAIL          No   Only 1 detection; coords incorrect
     13  qwen3-vl:4b                3.5   2/6     1    FAIL          No   Thinking model; exhausts ALL token budgets (even 8192) on CoT — 0 output in all configs tested
-    14  glm-ocr:latest             2.2   1/6     2    FAIL          No   OCR-tuned; not trained for spatial detection
-   14=  glm-ocr:bf16               2.2   1/6     2    FAIL          No   Alias of :latest (same digest)
+    14  glm-ocr:latest             2.2   1/6     2    FAIL          No   OCR engine echoes prompt text; memory injection makes it worse (reproduces injected coords as prose)
+   14=  glm-ocr:bf16               2.2   1/6     2    FAIL          No   Alias of :latest — memory injection confirmed identical behaviour
     15  moondream:latest           1.7   1/6     0    FAIL          No   Cannot produce structured JSON output
     16  qwen3.5:2b                 2.7   1/6     0    FAIL          No   Text-only model; no vision encoder
     17  llava-phi3:3.8b            2.9   0/6     2    FAIL          No   CLIP runner bug; echoes prompt (fixed in Ollama 0.20.4)
@@ -740,7 +815,7 @@ BUDGET BREAKDOWN (if you buy)
     19  qwen3-vl:2b                1.9   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
     20  qwen3-vl:8b                6.1   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
    20=  qwen3-vl:latest            6.1   0/6     0    FAIL          No   Alias of :8b (same digest)
-    21  qwen3.5:4b                ~3.5   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+    21  qwen3.5:4b                ~3.5   0/6     0    FAIL          No   Silent token consumption — 0 raw + 0 thinking output across all configs; not testable for memory injection
     22  qwen3.5:0.8b              ~0.7   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
     23  translategemma              —    0/6     0    FAIL          No   No vision capability; NLP translation model
     24  devstral                    —    0/6     0    FAIL          No   No vision capability; code generation model
