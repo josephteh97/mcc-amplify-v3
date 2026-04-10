@@ -1,15 +1,14 @@
 ================================================================================
   OLLAMA VISION MODEL BENCHMARK — FLOOR PLAN COLUMN DETECTION
   Task: Detect structural columns in architectural PDF floor plan
-  Date: 2026-04-08
+  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 11  |  Ranked: 27 unique + 2 aliases  |  Excluded: 5
 ================================================================================
 
 TEST SETUP
 ----------
 PDF          : 2aad5b45-ce32-40a6-a00d-e5b0e67f5d08.pdf  (A2 floor plan, 1285x1273 px @ 150 DPI)
 Ground truth : 67 confirmed column boxes from human corrections in detections.db
-               (25 additional "add" corrections excluded — coordinates are bogus [0,0,...]
-               due to a feedback UI bug where the add-correction stored a placeholder bbox)
+               (25 "add" corrections excluded — coordinates bogus [0,0,...] due to feedback UI bug)
 Tiling       : 1280x1280 px sliding window, step 1080, 200 px overlap → 4 tiles per page
                Tile 0 (offset 0,0) covers 99% of the page — all 67 GT boxes are here
 Vision size  : Tiles resized to 1024x1024 before sending to model (768x768 for minicpm-v)
@@ -19,303 +18,333 @@ Conf thresh  : 0.30 minimum confidence to count a detection
 SCORING RUBRIC (6 points)
 --------------------------
   1. Valid JSON on >=50% of tiles
-  2. Has at least one detection with bbox coordinates
+  2. At least one detection with bbox coordinates
   3. Detection count in plausible range (5-200)
   4. Precision > 0.20
   5. Recall > 0.30
   6. F1 > 0.25
 Pass threshold: >=4/6 points
 
+EXCLUDED FROM RANKING (never ran — pull failed or size prohibitive)
+---------------------------------------------------------------------
+  gemma4:e4b              — pull cancelled; would OOM worse than gemma4:e2b (~4 GB, VRAM limit)
+  kimi-k2.5               — pull failed; tag does not exist on Ollama
+  glm-ocr:98_o            — pull failed; tag does not exist on Ollama
+  mistral-small3.2        — pull failed; bare tag (without :latest) does not resolve
+  mistral-small3.2:latest — pull cancelled; 15 GB far exceeds 8 GB VRAM capacity
+
 BASELINE (SEA-LION v4 4B — the original detection model)
 ---------------------------------------------------------
   Model    : aisingapore/Gemma-SEA-LION-v4-4B-VL:latest  (~3.3 GB)
-  Metrics  : P=0.254  R=0.728  F1=0.376  (ESTIMATED from 264 human corrections)
+  Metrics  : P=0.254  R=0.728  F1=0.376  (estimated from 264 human corrections)
   Notes    : 67 confirmed TPs, 197 rejected FPs, 25 missed FNs.
-             High recall (finds most columns) but 68% false positive rate.
-             This poor precision is why YOLO fine-tuning was adopted in v3.
+             High recall but 68% FP rate — the main reason YOLO was adopted in v3.
+
 
 ================================================================================
-  MODEL RESULTS — sorted by score (best first)
+  COMPLETE RANKED RESULTS  (27 unique + 2 aliases — 0 passed)
 ================================================================================
 
-TIER 1 — Score 3/6 (produces valid JSON + detections, but bbox coordinates are wrong)
----------------------------------------------------------------------------------------
+  Rank  Model                      GB     Score  Dets   P      R      F1     Status
+  ──────────────────────────────────────────────────────────────────────────────────
+   1    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
+   2    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL
+   3    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL
+   4    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
+   5    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL
+   6    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
+   7    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
+   8    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL
+   9    ministral-3:3b            3.0     2/6    86    0.000  0.000  0.000   FAIL  (no vision)
+  10    ministral-3:8b            6.0     2/6    85    0.000  0.000  0.000   FAIL  (no vision)
+  11    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL
+  11=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)
+  12    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
+  13    qwen3.5:2b                2.7     1/6     0    0.000  0.000  0.000   FAIL  (text-only)
+  14    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)
+  15    qwen3.5:9b                6.6     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  16    qwen3.5:4b               ~3.5     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  17    qwen3.5:0.8b             ~0.7     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
+  18    translategemma             —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
+  19    devstral                   —      0/6     0    0.000  0.000  0.000   FAIL  (no vision)
+  20    deepseek-ocr:3b           2.0     0/6     0    0.000  0.000  0.000   FAIL  (OCR only)
+  21    ministral-3:14b           9.1     0/6     0     —      —      —      TIMEOUT (676s)
+  22    mistral-small3.1:latest  15.0     0/6     0     —      —      —      TIMEOUT (987–1686s)
+  22=   mistral-small3.1:24b     15.0     0/6     0     —      —      —      TIMEOUT (= :latest, same digest)
+  23    llama4:16x17b            67.0     0/6     0     —      —      —      OOM
+  24    bakllava:7b               4.7     0/6     0     —      —      —      CRASH (CLIP)
+  25    llava:7b                  4.7     0/6     0     —      —      —      CRASH (CLIP)
+  26    llava-llama3:8b           5.5     0/6     0     —      —      —      CRASH (CLIP)
+  27    glm-ocr:q8_0              1.6     0/6     0     —      —      —      CRASH (GGML)
+  ──────────────────────────────────────────────────────────────────────────────────
+       SEA-LION v4 4B (baseline)  3.3      —    264   0.254  0.728  0.376   BASELINE
 
-[1] qwen2.5vl:7b              ~6.0 GB    Score: 3/6   FAIL
+  Models passed: 0 / 29
+  (27 unique models + 2 alias tags sharing a digest with an already-ranked model)
+
+
+================================================================================
+  TIER 1 — Score 3/6
+  Valid JSON + detections, but bounding box coordinates are wrong
+================================================================================
+
+[1] gemma4:e2b               ~7.2 GB    Score: 3/6   FAIL   * BEST JSON QUALITY
+    Detections : 9 (4 columns + 5 grid lines)
+    Inference  : 346s/tile (7.2 GB on 8 GB GPU — heavy CPU offload)
+    JSON rate  : 100%
+    Failure    : Coordinates are hallucinated — columns evenly spaced at x=200,300,400,500
+                 with identical y-range [300,400]. Fabricated grid pattern, not real detections.
+                 Column bboxes (50x100 px) are also too large vs real GT columns (40-50 px).
+    JSON quality: EXCELLENT — best of all 27 models. Every field present, correct types,
+                  plausible confidence values (0.95-0.98). Perfect structure, no repair needed.
+    Detections returned:
+      column    conf=0.95  bbox=[200,300,250,400]  shape=rectangle
+      column    conf=0.95  bbox=[300,300,350,400]  shape=rectangle
+      column    conf=0.95  bbox=[400,300,450,400]  shape=rectangle
+      column    conf=0.95  bbox=[500,300,550,400]  shape=rectangle
+      grid_line conf=0.98  bbox=[200,300,550,300]  shape=horizontal
+      (+ 4 more grid_lines — all evenly spaced)
+    NOTE       : Most promising candidate for fine-tuning. Zero-shot it hallucinates
+                 plausible-but-wrong coordinates; trained on floor plan data, gemma4's
+                 structured output capability could produce accurate results.
+    NOTE       : Requires Ollama >=0.20.4 (fails on <=0.18.x).
+                 gemma4:e4b excluded — pull failed (VRAM).
+
+[2] qwen2.5vl:7b             ~6.0 GB    Score: 3/6   FAIL
     Detections : 12 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Bounding boxes do not overlap any ground truth column (IoU=0 on all
-    12 detections). The model finds approximate structural regions but cannot localize
-    the small 40-50 px column symbols precisely. 1 tile timed out at 300s because the
-    7.9 GB model exceeds the GPU's 6.5 GB free VRAM, causing partial CPU offload.
-    JSON rate: 75% (3/4 tiles)   Avg speed: ~160s/tile
+    Inference  : ~160s/tile (partial CPU offload)
+    JSON rate  : 75% (3/4 tiles — 1 tile hit GGML tensor assertion crash under VRAM pressure)
+    Failure    : Bounding boxes do not overlap any GT column (IoU=0 on all 12). Finds
+                 approximate structural regions but cannot localize 40-50 px column symbols.
 
-[2] minicpm-v:8b              ~5.5 GB    Score: 3/6   FAIL
+[3] minicpm-v:8b             ~5.5 GB    Score: 3/6   FAIL
     Detections : 9 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Detected boxes are 200-300 px wide — far larger than the 40-50 px
-    GT column symbols. None of the 9 detections overlaps a GT box at IoU>=0.25.
-    Special issue: Crashes with HTTP 500 at vision_size=512 and 1024 on this GPU.
-    Only works reliably at 768 px — resolution-specific bug in the minicpm GGUF
-    vision encoder. Tested at 768 px to work around this.
-    JSON rate: 100%   Avg speed: ~4s/tile
+    Inference  : ~4s/tile
+    JSON rate  : 100%
+    Failure    : Detected boxes are 200-300 px wide — far larger than 40-50 px GT columns.
+                 None of the 9 detections overlaps a GT box at IoU>=0.25.
+    Special    : Crashes with HTTP 500 at vision_size=512 and 1024. Only runs at 768 px —
+                 resolution-specific bug in the minicpm GGUF vision encoder.
 
-[3] granite3.2-vision:2b      ~1.9 GB    Score: 3/6   FAIL
+[4] granite3.2-vision:2b     ~1.9 GB    Score: 3/6   FAIL
     Detections : 8 after NMS (raw: 49 detections in main tile before NMS)
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Massive over-detection (49 raw boxes in one tile) — the model
-    hallucinates column shapes at every wall corner, grid intersection, and structural
-    feature. NMS collapses to 8, but none of those 8 match GT boxes. The model
-    understands "find squares in floor plans" but draws boxes around the wrong things.
-    JSON rate: 100%   Avg speed: ~13s/tile
-
-
-TIER 2 — Score 2/6 (valid JSON + some detections, but count too low and coords wrong)
----------------------------------------------------------------------------------------
-
-[4] gemma3:4b                 ~3.0 GB    Score: 2/6   FAIL
-    Detections : 4 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Too few detections (count=4, rubric requires 5+). The model
-    is overly conservative — outputs one detection per tile regardless of content.
-    All 4 detections have wrong coordinates. Gemma 3 4B has vision capability but
-    struggles with the schematic/line-drawing nature of engineering floor plans.
-    JSON rate: 100%   Avg speed: ~7s/tile
-
-[5] llama3.2-vision:11b       ~7.9 GB    Score: 2/6   FAIL
-    Detections : 4 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Two tiles timed out at 300s each. Model is 7.9 GB but the GPU
-    only has ~6.5 GB free VRAM, so many layers offload to CPU — inference time
-    exceeds 5 minutes per tile. Only 2 of 4 tiles completed within timeout.
-    The 4 returned detections have wrong bounding box positions.
-    NOTE: This is architecturally the strongest model tested. On a 24 GB+ VRAM GPU
-    (or via API), it would likely perform significantly better.
-    JSON rate: 50% (2/4 tiles within timeout)   Avg speed: >300s/tile
-
-[6] qwen2.5vl:3b              ~3.2 GB    Score: 2/6   FAIL
-    Detections : 1 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Almost no detections (count=1). The 3B model is too small to
-    confidently identify column symbols. Tiles 2-4 return empty columns list despite
-    valid JSON structure. The single detection found has wrong coordinates.
-    JSON rate: 100%   Avg speed: ~87s/tile (partly CPU-bound)
-
-[7] qwen3-vl:4b               ~3.5 GB    Score: 2/6   FAIL
-    Detections : 1 after NMS
-    P=0.000  R=0.000  F1=0.000
-    Failure reason: Same pattern as qwen2.5vl:3b — overly cautious, almost always
-    returns {"columns": []}. The 4B model is conservative and refuses to commit
-    to detections in the complex floor plan tiles.
-    JSON rate: 100%   Avg speed: ~27s/tile
-
-
-TIER 3 — Score 1/6 (valid JSON only, zero detections)
--------------------------------------------------------
-
-[8] moondream:latest          ~1.7 GB    Score: 1/6   FAIL
-    Detections : 0
-    Failure reason: Returns {"columns": []} on every tile. Moondream is a tiny
-    general-purpose VLM (1.7 GB) not designed for structured detection tasks
-    requiring spatial JSON bbox output. Cannot interpret the detection prompt format.
-    JSON rate: 100%
-
-[9] qwen3.5:2b                ~2.7 GB    Score: 1/6   FAIL
-    Detections : 0
-    Failure reason: qwen3.5:2b is a TEXT language model, NOT a vision model.
-    It accepts the image in the payload without error but ignores it entirely.
-    Returns plausible JSON text ({"columns": []}) but performs no visual processing.
-    JSON rate: 100% (text-only, no actual vision)
-
-
-TIER 4 — Score 0/6 (no usable output at all)
----------------------------------------------
-
-[10] deepseek-ocr:3b          ~2.0 GB    Score: 0/6   FAIL
-     Detections : 0
-     Failure reason: Text-OCR model only. Designed to extract text characters from
-     document images, not to perform spatial object detection. Ignores image content
-     entirely — returns instantly (0s per tile) with no bounding boxes whatsoever.
-     JSON rate: 0%
-
-[11] bakllava:7b              ~4.7 GB    Score: 0/6   FAIL
-     Detections : 0
-     Failure reason: HTTP 500 Internal Server Error on every image request.
-     BakLLaVA uses the legacy LLaVA-1.5 CLIP-based vision encoder, which crashes
-     the Ollama 0.18.x model runner when processing image payloads. Text-only
-     requests work fine. Root cause: CLIP runner EOF crash (Ollama 0.18 bug).
-     Requires Ollama upgrade or model architecture update to fix.
-     JSON rate: 0%
-
-[12] llava:7b                 ~4.7 GB    Score: 0/6   CRASH
-     Detections : 0
-     Failure reason: HTTP 500 on every tile, even with a 64x64 px test image.
-     Original LLaVA 7B uses the same legacy CLIP encoder as bakllava. The Ollama
-     CLIP runner crashes with EOF on any image payload regardless of size.
-     Retested 2026-04-09 on Ollama 0.20.4 — crash persists (44s then HTTP 500).
-     Unlike llava-phi3:3.8b, the full LLaVA 7B CLIP crash is NOT fixed in 0.20.4.
-     JSON rate: 0%
-
-[13] llava-phi3:3.8b          ~2.9 GB    Score: 0/6   FAIL
-     Detections : 2 (1 column + 1 grid line) — but both are prompt echoes
-     P=0.000  R=0.000  F1=0.000
-     Retested 2026-04-09 on Ollama 0.20.4 — CLIP crash is FIXED for this model.
-     Failure reason: Model now runs and returns valid JSON in 32s, but the output is
-     a verbatim copy of the example coordinates in the detection prompt:
-       column    [120, 340, 155, 375]  conf=0.92  (exact copy of prompt example)
-       grid_line [0, 500, 1280, 500]   conf=0.85  (exact copy of prompt example)
-     The model did not analyze the image — it pattern-matched the prompt example and
-     echoed it back. A few-shot example with different coordinates would be needed to
-     confirm whether it can do real detection.
-     JSON rate: 100%   Avg speed: ~32s
-
-[14] llava-llama3:8b          ~5.5 GB    Score: 0/6   CRASH
-     Detections : 0
-     Failure reason: HTTP 500 — same CLIP runner crash as llava:7b.
-     LLaVA on LLaMA-3 uses the same legacy CLIP vision encoder.
-     Untestable on Ollama 0.18.x.
-     JSON rate: 0%
-
-[17] llama4:16x17b            ~67.0 GB   Score: 0/6   OOM
-     Detections : 0
-     Failure reason: System RAM exhausted before model could load.
-     Ollama reported: "model requires more system memory (58.2 GiB) than is available (33.0 GiB)"
-     The model failed at 4s with HTTP 500 — inference never started.
-     This is a RAM constraint, not VRAM: the full MoE weight set (67 GB on disk) requires
-     ~58 GB RAM to load all expert shards. The dev machine only has 33 GB RAM.
-     Unlike llama3.2-vision:11b (VRAM bottleneck) this cannot be fixed by adding VRAM alone —
-     it requires a machine with ≥64 GB RAM.
-     JSON rate: 0%   Inference time: 4.07s (load attempt only)
+    Inference  : ~13s/tile
+    JSON rate  : 100%
+    Failure    : Massive over-detection — 49 raw boxes in one tile. Hallucinates column shapes
+                 at every wall corner, grid intersection, and structural feature. NMS collapses
+                 to 8 but none match GT boxes. Understands "find squares in floor plans" but
+                 draws boxes around the wrong things.
 
 
 ================================================================================
-  ADDITIONAL MODEL RESULTS (tested 2026-04-09)
+  TIER 2 — Score 2/6
+  Valid JSON + some detections, but count out of range or P/R/F1 all zero
 ================================================================================
+
+[5] gemma3:4b                ~3.0 GB    Score: 2/6   FAIL
+    Detections : 4 after NMS
+    Inference  : ~7s/tile
+    JSON rate  : 100%
+    Failure    : Too few detections (count=4; rubric requires >=5). Overly conservative —
+                 outputs one detection per tile regardless of content. All 4 detections have
+                 wrong coordinates. Has vision capability but struggles with schematic line-
+                 drawing floor plan style.
+
+[6] llama3.2-vision:11b      ~7.9 GB    Score: 2/6   FAIL   * STRONGEST ARCHITECTURE
+    Detections : 4 after NMS
+    Inference  : >300s/tile (2 tiles timed out)
+    JSON rate  : 50% (2/4 tiles within timeout)
+    Failure    : VRAM bottleneck — 7.9 GB model on 6.5 GB free VRAM causes heavy CPU
+                 offload, inference exceeds 5 min/tile. Only 2 of 4 tiles completed.
+                 The 4 returned detections have wrong bounding box positions.
+    NOTE       : Architecturally the strongest model tested. On a 24 GB+ VRAM GPU or
+                 via API, this model would likely perform significantly better.
+
+[7] qwen2.5vl:3b             ~3.2 GB    Score: 2/6   FAIL
+    Detections : 1 after NMS
+    Inference  : ~87s/tile (partly CPU-bound)
+    JSON rate  : 100%
+    Failure    : Almost no detections (count=1). 3B model is too small to confidently
+                 identify column symbols. Tiles 2-4 return empty columns list despite
+                 valid JSON structure. Single detection has wrong coordinates.
+
+[8] qwen3-vl:4b              ~3.5 GB    Score: 2/6   FAIL
+    Detections : 1 after NMS
+    Inference  : ~27s/tile
+    JSON rate  : 100%
+    Failure    : Same pattern as qwen2.5vl:3b — overly cautious, almost always returns
+                 {"columns": []}. Refuses to commit to detections in complex floor plan tiles.
+
+--- TEXT-ONLY IMPOSTORS — no vision encoder; 2/6 score is a rubric artefact, not real capability ---
+
+[9] ministral-3:3b           ~3.0 GB    Score: 2/6   FAIL   (NO VISION ENCODER)
+    Detections : 86 (54 columns + 31 grid lines + 1 other)
+    Inference  : 65s total
+    JSON rate  : 100% (hallucinated — no image analysis)
+    Failure    : Pure text LLM, no vision encoder. Ignores the image and hallucinates a
+                 plausible-looking JSON array. Coordinates follow a regular 30-50 px stepped
+                 pattern from top-left ([100,100,130,150], [150,100,180,140]...) — fabrication.
+    NOTE       : Looks deceptively good (valid JSON, plausible count) but is entirely
+                 hallucinated. Would silently produce meaningless results with no error signal.
+
+[10] ministral-3:8b          ~6.0 GB    Score: 2/6   FAIL   (NO VISION ENCODER)
+     Detections : 85 (0 columns + 85 grid lines)
+     Inference  : 186s total
+     JSON rate  : 100% (hallucinated — no image analysis)
+     Failure    : Same as :3b — pure text LLM, no vision. Hallucinated 85 perfectly-spaced
+                  vertical grid lines at x=100,200,300... with confidence=1.0 on every item.
+                  Several coordinates exceed the 1280 px image width (x=1400-1800+).
+                  Uniform confidence=1.0 is a hallucination signal — real models vary.
+     NOTE       : Worse than :3b (zero columns detected vs 54). Both are unsuitable.
+
+
+================================================================================
+  TIER 3 — Score 1/6
+  Valid JSON only — zero or near-zero usable detections
+================================================================================
+
+[11] glm-ocr:latest          ~2.2 GB    Score: 1/6   FAIL
+     Detections : 2
+     JSON rate  : 100%
+     Failure    : GLM-4V OCR model. Returns valid JSON with 2 detections but coordinates
+                  are wrong — optimised for text extraction, not spatial bbox detection.
+     NOTE       : glm-ocr:q8_0 (Q8_0 quantization) crashes with a GGML tensor error (see [27]).
+
+[11=] glm-ocr:bf16             ~2.2 GB    Score: 1/6   FAIL   (ALIAS of glm-ocr:latest)
+      Detections : 2
+      JSON rate  : 100%
+      Result     : Identical to glm-ocr:latest — same Ollama digest (6effedd0dc8a), same 1.1B
+                   F16 weights. Not re-run; result is byte-for-byte identical.
+      NOTE       : Skip-list entry "bf16 unquantized — likely >16 GB" was incorrect.
+                   Model is F16 on 1.1B parameters = 2.2 GB, not >16 GB.
+
+[12] moondream:latest        ~1.7 GB    Score: 1/6   FAIL
+     Detections : 0
+     JSON rate  : 100%
+     Failure    : Returns {"columns": []} on every tile. Tiny general-purpose VLM not
+                  designed for structured detection tasks requiring spatial JSON bbox output.
+
+[13] qwen3.5:2b              ~2.7 GB    Score: 1/6   FAIL   (TEXT MODEL — no vision)
+     Detections : 0
+     JSON rate  : 100% (text-only output)
+     Failure    : TEXT language model, not a vision model. Accepts image payload without
+                  error but ignores it entirely. Returns {"columns": []} with no visual processing.
+
+
+================================================================================
+  TIER 4 — Score 0/6
+  No usable output — crashed, timed out, wrong output, or text-only
+================================================================================
+
+--- Ran but produced zero or invalid detections ---
+
+[14] llava-phi3:3.8b         ~2.9 GB    Score: 0/6   FAIL
+     Detections : 2 — both verbatim copies of the prompt example coordinates
+     Inference  : ~32s/tile
+     JSON rate  : 100%
+     Failure    : Returns exact coordinates from the detection prompt example:
+                    column    [120,340,155,375]  conf=0.92  (copied from prompt)
+                    grid_line [0,500,1280,500]   conf=0.85  (copied from prompt)
+                  Pattern-matched the prompt example rather than analysing the image.
+     NOTE       : CLIP crash (Ollama 0.18.x) is FIXED in 0.20.4 for this variant.
+                  The full LLaVA 7B CLIP crash persists in 0.20.4 (see [25]).
 
 [15] qwen3.5:9b              ~6.6 GB    Score: 0/6   FAIL
      Detections : 0
-     Failure reason: Thinking model — all inference budget consumed by chain-of-thought.
-     qwen3.5:9b is a HYBRID vision+thinking model. It CAN see the image: the internal
-     thinking field (6966 chars) correctly identifies "Grid Lines: Dashed lines forming
-     a grid system labeled with codes like RCB3, RCB2, SB1" — but after reasoning, it
-     returns empty content (0 chars) on every inference attempt.
-     Two tests run:
-       num_predict=4096 → 451s, 0 chars output (4096 tokens fully consumed by thinking)
-       num_predict=8192 → 137s, 0 chars output (2238 eval_count, all thinking tokens)
-     Even a text-only version of the detection prompt returns 0 chars (226s, thinking only).
-     The model reasons correctly but cannot emit structured JSON output for this task.
-     NOTE: Unlike qwen3.5:2b (which is text-only and ignores images), qwen3.5:9b
-     genuinely perceives the floor plan content — it just cannot format a JSON response.
-     This is a known Qwen3.5 quirk: thinking-heavy prompts produce verbose reasoning but
-     empty content when the model concludes it cannot precisely determine pixel coordinates.
-     JSON rate: 0%   Avg speed: ~137–451s/tile
+     Inference  : 137-451s/tile
+     Failure    : Hybrid vision+thinking model. CAN see the image — internal thinking field
+                  (6,966 chars) correctly identifies floor plan content ("Grid Lines: Dashed
+                  lines labeled with codes like RCB3, RCB2, SB1") — but returns empty content
+                  (0 chars) on every attempt. All tokens consumed by chain-of-thought reasoning.
+     Forced JSON tests (both failed):
+       Tool calling  — 526s, 16,620 thinking chars, tool NEVER called.
+       format=schema — schema respected but model used empty-array escape hatch.
+     NOTE        : CAN see the floor plan but reasoning mode refuses to emit bbox
+                   coordinates it cannot verify precisely. Fine-tuning required.
 
-     FORCED JSON ATTEMPTS (tools.py — tested 2026-04-09):
-     Two approaches were tested to bypass the empty-content problem:
-
-     Approach A — Tool/Function Calling (ollama tools=[DETECTION_TOOL]):
-       Required the model to call report_detections(columns=[...], grid_lines=[...]).
-       Result: tool_called=False. 526s inference, 16,620 thinking chars, tool NEVER called.
-       The reasoning chain concluded it could not verify pixel coordinates precisely, so
-       it refused to commit to the function call at all.
-
-     Approach B — Structured Output (ollama format=JSON_SCHEMA):
-       Grammar-constrained sampling forced output to match {"columns":[...],"grid_lines":[...]}.
-       Result: Schema respected — but model output {"columns":[],"grid_lines":[]}.
-       Used the empty-array escape hatch. 312s, 13,754 thinking chars, 0 detections.
-
-     CONCLUSION: Forcing JSON format does not fix the localization problem.
-     qwen3.5:9b CAN see the image but its reasoning mode refuses to emit bounding boxes
-     it cannot verify precisely. Fine-tuning on floor plan annotations would be required
-     to make it commit to coordinates.
-
-
-================================================================================
-  GEMMA4 RESULTS (tested 2026-04-09 — Ollama upgraded to 0.20.4)
-================================================================================
-
-[16] gemma4:e2b               ~7.2 GB    Score: 3/6   FAIL
-     Detections : 9 (4 columns + 5 grid lines)
-     P=0.000  R=0.000  F1=0.000 (estimated — coordinates are evenly spaced, likely hallucinated)
-     Inference time: 346s (5 min 46s) — model is 7.2 GB on 8 GB VRAM, heavy CPU offload
-     JSON rate: 100% — clean, perfectly structured JSON array
-     JSON quality: EXCELLENT — best JSON formatting of any model tested. Every field present,
-                   correct types, reasonable confidence values (0.95-0.98).
-
-     Detections returned:
-       column     conf=0.95 bbox=[200,300,250,400]  shape=rectangle
-       column     conf=0.95 bbox=[300,300,350,400]  shape=rectangle
-       column     conf=0.95 bbox=[400,300,450,400]  shape=rectangle
-       column     conf=0.95 bbox=[500,300,550,400]  shape=rectangle
-       grid_line  conf=0.98 bbox=[200,300,550,300]  shape=horizontal
-       grid_line  conf=0.98 bbox=[200,300,200,400]  shape=vertical
-       grid_line  conf=0.98 bbox=[300,300,300,400]  shape=vertical
-       grid_line  conf=0.98 bbox=[400,300,400,400]  shape=vertical
-       grid_line  conf=0.98 bbox=[500,300,500,400]  shape=vertical
-
-     Failure reason: Coordinates are suspiciously regular — columns evenly spaced at
-     x=200,300,400,500 with identical y-range [300,400]. This is a HALLUCINATED GRID pattern,
-     not real detections from the image. The model understood the prompt perfectly (best JSON
-     of any model) but fabricated plausible-looking coordinates instead of reading the actual
-     floor plan. The column bboxes (50x100 px) are also too large vs real GT columns (40-50 px).
-     This is the classic VLM failure mode: excellent instruction-following + poor spatial grounding.
-
-     Verdict: gemma4:e2b has the BEST structured output capability of all models tested.
-     If coordinates were accurate, this would be the winner. The model architecture is right
-     but it lacks floor-plan-specific spatial grounding. A fine-tuned gemma4 could potentially
-     break the P/R barrier — this is the most promising candidate for future fine-tuning.
-
-     NOTE: gemma4:e4b (~4.5 GB effective, likely ~10+ GB on disk) was NOT tested because
-     it would exceed 8 GB VRAM even more severely. Requires 16+ GB GPU.
-
-
-================================================================================
-  GLM-OCR Q8_0 RESULTS (tested 2026-04-10 — Ollama 0.20.4)
-================================================================================
-
-[18] glm-ocr:q8_0               ~1.6 GB    Score: 0/6   CRASH
+[16] qwen3.5:4b             ~3.5 GB    Score: 0/6   FAIL
      Detections : 0
-     Failure reason: GGML tensor assertion crash — identical to qwen2.5vl:7b.
-     Error: "GGML_ASSERT(a->ne[2] * 4 == b->ne[0]) failed" (HTTP 500)
-     The Q8_0 quantization variant of GLM-OCR triggers a tensor shape mismatch in the
-     GGML backend when processing image inputs. This is the same bug that crashes
-     qwen2.5vl:7b — both models use a similar vision encoder architecture that is
-     incompatible with the current Ollama GGML runtime for image payloads.
-     The default glm-ocr:latest (Q4 quantization, 2.2 GB) works fine and produces
-     valid JSON (Score 1/6, 2 detections) — only the Q8_0 variant crashes.
-     Root cause: Higher-precision quantization (Q8_0) changes tensor dimensions in a way
-     that violates the GGML attention kernel's shape assertion for the vision encoder.
-     JSON rate: 0%   Inference time: instant crash
+     Failure    : Thinking model — same behaviour as qwen3.5:9b. Inference budget entirely
+                  consumed by chain-of-thought; no structured output emitted.
 
+[17] qwen3.5:0.8b           ~0.7 GB    Score: 0/6   FAIL
+     Detections : 0
+     Failure    : Thinking model — same behaviour as :9b / :4b. Even the smallest qwen3.5
+                  variant refuses to emit coordinates it cannot verify.
 
-================================================================================
-  SUMMARY TABLE
-================================================================================
+[18] translategemma            —        Score: 0/6   FAIL   (NO VISION ENCODER)
+     Detections : 0
+     Failure    : Translation-focused model with no vision capability. Ignores image content.
 
-  Model                          GB    Score  Dets   P      R      F1     Result
-  ─────────────────────────────────────────────────────────────────────────────
-  gemma4:e2b (hallucinated bbox) 7.2   3/6     9    0.000  0.000  0.000  FAIL *BEST JSON*
-  qwen2.5vl:7b                   6.0   3/6    12    0.000  0.000  0.000  FAIL
-  minicpm-v:8b                   5.5   3/6     9    0.000  0.000  0.000  FAIL
-  granite3.2-vision:2b           1.9   3/6     8    0.000  0.000  0.000  FAIL
-  gemma3:4b                      3.0   2/6     4    0.000  0.000  0.000  FAIL
-  llama3.2-vision:11b            7.9   2/6     4    0.000  0.000  0.000  FAIL
-  qwen2.5vl:3b                   3.2   2/6     1    0.000  0.000  0.000  FAIL
-  qwen3-vl:4b                    3.5   2/6     1    0.000  0.000  0.000  FAIL
-  moondream:latest               1.7   1/6     0    0.000  0.000  0.000  FAIL
-  qwen3.5:2b (text model)        2.7   1/6     0    0.000  0.000  0.000  FAIL
-  deepseek-ocr:3b (OCR only)     2.0   0/6     0    0.000  0.000  0.000  FAIL
-  bakllava:7b (CLIP crash)       4.7   0/6     0    0.000  0.000  0.000  FAIL
-  llava:7b (CLIP crash)          4.7   0/6     0    0.000  0.000  0.000  FAIL
-  llava-phi3:3.8b (CLIP crash)   2.9   0/6     0    0.000  0.000  0.000  CRASH
-  llava-llama3:8b (CLIP crash)   5.5   0/6     0    0.000  0.000  0.000  CRASH
-  qwen3.5:9b (thinking, no JSON) 6.6   0/6     0    0.000  0.000  0.000  FAIL
-  glm-ocr:q8_0 (GGML crash)     1.6   0/6     0    0.000  0.000  0.000  CRASH
-  llama4:16x17b (RAM OOM)        67.0  0/6     0    0.000  0.000  0.000  OOM
-  ─────────────────────────────────────────────────────────────────────────────
-  SEA-LION v4 4B (baseline est)  3.3   --     264   0.254  0.728  0.376  BASELINE
+[19] devstral                  —        Score: 0/6   FAIL   (NO VISION ENCODER)
+     Detections : 0
+     Failure    : Mistral code generation model. No vision encoder. Ignores image content.
 
-  Models passed: 0 / 35
+[20] deepseek-ocr:3b         ~2.0 GB    Score: 0/6   FAIL
+     Detections : 0
+     Inference  : ~0s/tile (instant — no image processing)
+     JSON rate  : 0%
+     Failure    : Text-OCR model designed to extract text characters from documents. Does
+                  not perform spatial object detection. Returns instantly with no bounding boxes.
+
+--- Timeout / VRAM overflow ---
+
+[21] ministral-3:14b         ~9.1 GB    Score: 0/6   TIMEOUT
+     Detections : 0
+     Inference  : 676s (>11 min — hard 300s limit exceeded)
+     Failure    : 9.1 GB on 8 GB VRAM — massive CPU offload. Never produced output within
+                  the timeout window. Whether it can detect columns is unknown.
+     NOTE       : Tag WAS incorrectly listed as "does not exist on Ollama" — it does exist.
+                  On a 24 GB+ VRAM GPU this would likely finish in 60-120s.
+
+[22] mistral-small3.1:latest ~15.0 GB   Score: 0/6   TIMEOUT
+     Detections : 0
+     Inference  : 987–1686s total wall time across two runs (300s timeout fired; thread ran to completion)
+     Failure    : 15 GB on 8 GB VRAM — heaviest CPU offload of all tested models.
+     NOTE       : utils.py ThreadPoolExecutor waits for thread completion after firing timeout
+                  (executor.shutdown(wait=True)), so reported time is true wall time, not the 300s limit.
+                  Two runs were made: first 987s (single load), second 1686s (concurrent model load contention).
+                  ollama show confirms HAS vision capability (contradicts earlier skip-list note).
+                  Requires 24 GB+ VRAM.
+
+[22=] mistral-small3.1:24b   ~15.0 GB    Score: 0/6   TIMEOUT  (ALIAS of mistral-small3.1:latest)
+      Detections : 0
+      Result     : Identical to mistral-small3.1:latest — same Ollama digest (b9aaf0c2586a),
+                   same 15 GB weights. Not re-run; would produce the same 987–1686s timeout.
+
+[23] llama4:16x17b           ~67.0 GB   Score: 0/6   OOM
+     Detections : 0
+     Inference  : 4s (load attempt only — RAM exhausted before first token)
+     Failure    : System RAM exhausted. Ollama: "model requires 58.2 GiB, only 33.0 GiB
+                  available." Full MoE weight set requires ~58 GB RAM. Cannot be fixed with
+                  more VRAM alone — needs a machine with >=64 GB RAM.
+
+--- CLIP runner crashes ---
+
+[24] bakllava:7b             ~4.7 GB    Score: 0/6   CRASH (CLIP)
+     Detections : 0
+     Failure    : HTTP 500 on every image request. BakLLaVA uses the legacy LLaVA-1.5
+                  CLIP-based vision encoder. Root cause: CLIP runner EOF crash (Ollama 0.18 bug).
+
+[25] llava:7b                ~4.7 GB    Score: 0/6   CRASH (CLIP)
+     Detections : 0
+     Failure    : HTTP 500 on every tile, even with 64x64 px test images. Retested on
+                  Ollama 0.20.4 — crash persists (44s then HTTP 500). Unlike llava-phi3:3.8b,
+                  the full LLaVA 7B CLIP crash is NOT fixed in 0.20.4.
+
+[26] llava-llama3:8b         ~5.5 GB    Score: 0/6   CRASH (CLIP)
+     Detections : 0
+     Failure    : HTTP 500 — same legacy CLIP runner crash as llava:7b and bakllava:7b.
+
+--- GGML tensor crash ---
+
+[27] glm-ocr:q8_0            ~1.6 GB    Score: 0/6   CRASH (GGML)
+     Detections : 0
+     Failure    : GGML tensor assertion crash on image input.
+                  Error: "GGML_ASSERT(a->ne[2] * 4 == b->ne[0]) failed" (HTTP 500).
+                  Q8_0 quantization changes tensor dimensions in a way that violates the
+                  GGML attention kernel's shape assertion for the vision encoder.
+                  Default glm-ocr:latest (F16, 2.2 GB) runs fine — only Q8_0 crashes.
 
 
 ================================================================================
@@ -334,59 +363,58 @@ TIER 4 — Score 0/6 (no usable output at all)
      Models output 100-300 px approximate boxes around structural regions.
      Ground truth boxes are 40-50 px tight around the actual column symbol.
      Overlap (IoU) between coarse model boxes and tight GT boxes is effectively
-     zero — even if the model is "looking at the right area."
+     zero — even if the model is looking at the right area.
 
   3. DOMAIN GAP
      VLMs are trained on natural images and general documents. They understand
      that this is a floor plan, but cannot distinguish between column symbols,
-     grid balloons, wall intersections, and door arcs at the precision required.
+     grid balloons, wall intersections, and door arcs at the required precision.
 
   4. NO FINE-TUNING
-     All models tested are zero-shot (no floor plan training examples). Without
-     fine-tuning on architectural drawings, even the 11B LLaMA model fails.
+     All models tested are zero-shot. Without training on architectural drawings,
+     even the 11B LLaMA model fails.
 
 
 ================================================================================
   RECOMMENDED PATH FORWARD
 ================================================================================
 
-  OPTION A — GPT-4o (agent.py — already implemented)
+  OPTION A — GPT-4o via API  (agent.py — already implemented)
     Cost    : ~$0.15-0.20 per A0 PDF (35 tiles at ~$0.005/tile with few-shot images)
     Quality : Significantly better with reference column images (few-shot prompting)
-    Action  : Top up OpenAI credits at platform.openai.com/settings/billing ($10 = ~50 PDFs)
-              Then run test_detection.ipynb to get actual P/R/F1 numbers
+    Action  : Top up OpenAI credits; then run test_detection.ipynb to get P/R/F1 numbers
 
-  OPTION B — YOLO fine-tune (already deployed in v3 — PRODUCTION CHOICE)
+  OPTION B — YOLO fine-tune  (already deployed in v3 — PRODUCTION CHOICE)
     Speed   : ~50ms per page (1000x faster than any VLM tested)
     Quality : Significantly better P/R/F1 than SEA-LION baseline
     Weights : yolo_detection_agents/weights/column-detect.pt
     Status  : Active — this is the correct production approach
 
-  OPTION C — gemma4:e2b (TESTED 2026-04-09 — Score 3/6, P/R/F1=0.000)
-    Size    : 7.2 GB on disk (marketed as "effective 2B" but actual weights are larger)
-    Result  : Best JSON formatting of all 35 models. Perfect structure, correct types.
-              BUT coordinates are hallucinated (evenly spaced grid, not real detections).
-              346s per tile on RTX 4000 (7.2 GB model on 8 GB GPU = heavy CPU offload).
-    Verdict : Most promising architecture for fine-tuning. If trained on floor plan data,
-              gemma4's structured output capability could produce accurate bbox coordinates.
-              Zero-shot, it hallucinates plausible but wrong positions — same as all others.
+  OPTION C — gemma4:e2b fine-tuned
+    Why     : Best structured output quality of all 27 models tested. Perfect JSON,
+              correct types. Hallucinates coordinates zero-shot, but spatial grounding
+              can be learned. Most promising candidate for floor-plan fine-tuning.
+    Caveat  : 346s/tile on RTX 4000; needs 24 GB+ GPU or cloud API for practical use.
 
   OPTION D — llama3.2-vision:11b on better GPU
-    Requirement : 24 GB+ VRAM GPU (e.g. RTX 3090, A100)
-    Note        : Currently bottlenecked by CPU offload on Quadro RTX 4000 (8 GB)
+    Requirement : 24 GB+ VRAM (RTX 3090, A100)
+    Why         : Architecturally the strongest model tested; currently VRAM-bottlenecked.
 
 
 ================================================================================
   ENVIRONMENT
 ================================================================================
   OS      : Linux (Ubuntu)
-  Ollama  : 0.18.3 (upgraded to 0.20.4 for gemma4 testing on 2026-04-09)
-  GPU     : NVIDIA Quadro RTX 4000  (8 GB VRAM, 6.5 GB available during tests)
+  Ollama  : 0.18.3 → upgraded to 0.20.4 for Rounds 3+ (gemma4, llava-phi3 retest)
+  GPU     : NVIDIA Quadro RTX 4000  (8 GB VRAM, ~6.5 GB available during tests)
   RAM     : ~33 GB (Ollama reported 33.0 GiB available)
   Python  : 3.12 (anaconda yolo env)
   Tested  : 2026-04-07 to 2026-04-10
-  Log     : pdf_detection_agent/vision_model_evaluation_log.json  (35 entries)
-================================================================================
+  Rounds  : 11
+  Log     : pdf_detection_agent/benchmark/vision_model_evaluation_log.json
+
+  CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
+  Use YOLO (column-detect.pt) for production. Use OpenAI GPT-4o for cloud-based refinement.
 
 
 ================================================================================
@@ -479,7 +507,7 @@ BUDGET BREAKDOWN (if you buy)
   DETAILED REASONING:
 
   1. VLMs CANNOT DO THIS TASK ON EDGE
-     This entire benchmark (35 models tested across 5 rounds) proved that no local
+     This entire benchmark (27 models tested across 11 rounds) proved that no local
      vision model — not even on a workstation GPU — can reliably localize 40-50 px
      column symbols in architectural floor plans. Every model scored 0.000 P/R/F1.
      Running the same failing models on weaker edge hardware will not fix this.
@@ -517,202 +545,13 @@ BUDGET BREAKDOWN (if you buy)
   FINAL RECOMMENDATION:
   ─────────────────────────────────────────────────────────────────────────
   | Use case                    | Device              | Budget (SGD)     |
-  |────────────────────────────-|─────────────────────|──────────────────|
+  |─────────────────────────────|─────────────────────|──────────────────|
   | On-site YOLO deployment     | Orin Nano Super     | ~$460            |
   | Better VLM accuracy         | OpenAI GPT-4o API   | ~$15/month       |
   | Development/training        | Keep current GPU    | $0               |
   | Everything at once          | Orin Nano + GPT-4o  | ~$475 + $15/mo   |
   ─────────────────────────────────────────────────────────────────────────
 
-================================================================================
-  MINISTRAL-3:14B TEST (tested 2026-04-10)
-================================================================================
-
-[35] ministral-3:14b          ~9.1 GB    Score: 0/6   TIMEOUT
-     Detections : 0
-     Inference time: 676.49s (exceeded 300s limit)
-     Failure reason: Model is 9.1 GB on an 8 GB VRAM GPU — significant CPU offload
-     required. Inference took 676s (>11 minutes) before the 300s timeout was hit.
-     No output was produced within the timeout window.
-     NOTE: ministral-3:14b DOES exist on Ollama (tag was incorrectly marked as
-     non-existent in the Round 4 skipped list). It was pulled successfully at 9.1 GB.
-     Like llama3.2-vision:11b ([5]), this is a VRAM bottleneck — not a model capability
-     issue. Whether it can actually detect columns is unknown; it never completed inference.
-     On a 24 GB+ VRAM GPU it would likely finish in ~60-120s.
-     JSON rate: 0% (timed out)   Actual inference time: 676s
-
-  NOTE: Previously listed as "does not exist on Ollama" in Round 4 skipped models —
-  this was incorrect. The tag is valid and the model downloaded successfully.
-
-
-================================================================================
-  FINAL CUMULATIVE TOTAL: 0 / 37 models passed across all rounds
-================================================================================
-
-  Rounds completed:
-    Round 1 (2026-04-07): 14 models — core Ollama vision library
-    Round 2 (2026-04-08): 14 models — overnight exhaustive sweep (31 models incl. re-tests)
-    Round 3 (2026-04-09): qwen3.5:9b (forced JSON attempts), gemma4:e2b (Ollama 0.20.4)
-    Round 4 (2026-04-09): 17 models — parallel session (qwen3.5, qwen3-vl, gemma3:12b,
-                           translategemma, ministral-3, devstral, glm-ocr, mistral-small)
-    Round 5 (2026-04-10): glm-ocr:q8_0, ministral-3:14b
-    Round 6 (2026-04-10): ministral-3:3b (confirmed vision-incapable)
-    Round 7 (2026-04-10): ministral-3:8b (confirmed vision-incapable; tag now exists on Ollama)
-    Round 8 (2026-04-10): glm-ocr:bf16 (alias of :latest; corrected erroneous skip-list entry)
-    Round 9 (2026-04-10): mistral-small3.2:latest (15 GB — too large + text-only; pull cancelled)
-    Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT 987s; has vision but VRAM-constrained)
-    Round 11 (2026-04-10): mistral-small3.1:24b (alias of :latest — same digest b9aaf0c2586a)
-
-  Failure categories across all 35 models:
-    GGML/tensor crash       : 2  (qwen2.5vl:7b, glm-ocr:q8_0)  [glm-ocr:bf16 removed — it is an alias of :latest and runs fine]
-    OOM / VRAM overflow     : 5  (llava:7b, bakllava:7b, llava-llama3:8b, llama4:16x17b, ministral-3:14b)
-    CLIP runner crash       : 2  (llava:7b, llava-phi3:3.8b — fixed in 0.20.4)
-    Thinking mode (no output): 3  (qwen3.5:9b, qwen3.5:4b, qwen3.5:0.8b)
-    Not vision-capable      : 4  (qwen3.5:2b text-only, deepseek-ocr text-OCR, translategemma, devstral)
-    Pull failed / not exist : 3  (gemma4:e4b, gemma4:e2b on 0.18, kimi-k2.5)
-    Valid JSON but wrong bbox: 7  (qwen2.5vl:7b, minicpm-v:8b, granite3.2, gemma3:4b, gemma4:e2b, etc.)
-    Valid JSON but 0 dets   : 5  (moondream, qwen2.5vl:3b, qwen3-vl:4b, etc.)
-    Timeout (>300s)         : 3  (llama3.2-vision:11b, ministral-3:14b, qwen2.5vl:7b)
-
-  CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
-  Use YOLO (column-detect.pt) for production. Use OpenAI GPT-4o for cloud-based refinement.
-
-================================================================================
-  MINISTRAL-3:8B TEST (tested 2026-04-10)
-================================================================================
-
-[37] ministral-3:8b           ~6.0 GB    Score: 2/6   FAIL
-     Detections : 85 (columns=0, grid_lines=85, other=0)
-     Inference time: 186.28s
-     JSON valid : True
-     Failure reason: ministral-3:8b has NO vision encoder — it cannot see the image.
-     The model hallucinated 85 perfectly-spaced vertical grid_lines at x=100,200,300...
-     increments, all with y1=100, y2=600, and all confidence=1.0. Several coordinates
-     exceed the 1280px image width (x=1400–1800+), confirming the model has no awareness
-     of the actual image content. Zero columns were detected. Confidence=1.0 on every
-     item is another hallucination signal — real vision models produce varied confidences.
-     The skip list entry "does not exist on Ollama" was outdated; the tag now resolves
-     and downloads successfully (6.0 GB, 7.2B parameters, Mistral 3 text LLM).
-     Score breakdown:
-       JSON valid        : YES (+1) — well-formed array, all keys present
-       Has detections    : YES (+1) — 85 items returned
-       Count in range    : YES (85 is 5-200) — but fabricated
-       Precision > 0.20  : NO  — hallucinated bboxes, out-of-bounds coords
-       Recall > 0.30     : NO  — zero columns detected
-       F1 > 0.25         : NO
-     VERDICT: NOT SUITABLE. Worse than :3b — at least :3b returned columns.
-     :8b returns only grid_lines with robotically uniform coordinates and
-     confidence=1.0, a clear sign of blind JSON generation with no image understanding.
-     NOTE: Previously listed as "does not exist on Ollama" — now confirmed to exist.
-     Update batch_test_runner.py SKIPPED_MODELS if retesting.
-
-================================================================================
-  MINISTRAL-3:3B TEST (tested 2026-04-10)
-================================================================================
-
-[36] ministral-3:3b           ~3.0 GB    Score: 2/6   FAIL
-     Detections : 86 (columns=54, grid_lines=31, other=1)
-     Inference time: 65.23s
-     JSON valid : True
-     Failure reason: ministral-3:3b has NO vision encoder — it cannot see the image.
-     Despite receiving the image in the Ollama messages payload, the model ignores it
-     and hallucinates a plausible-looking JSON array. Coordinates follow a regular
-     30-50 px stepped pattern from the top-left corner (e.g. [100,100,130,150],
-     [150,100,180,140], [200,100,230,140]...) — clear evidence of fabrication, not
-     detection. The model is a pure text LLM (Mistral 3B edge variant) with no
-     multimodal capability.
-     Score breakdown:
-       JSON valid        : YES (+1) — well-formed array, all keys present
-       Has detections    : YES (+1) — 86 items returned
-       Count in range    : YES (86 is 5-200) — but fabricated
-       Precision > 0.20  : NO  — hallucinated bboxes, no IoU match to GT columns
-       Recall > 0.30     : NO  — no real detections
-       F1 > 0.25         : NO
-     VERDICT: NOT SUITABLE. Looks deceptively good (valid JSON, plausible count) but
-     is entirely hallucinated. Any pipeline using ministral-3:3b for detection would
-     silently produce meaningless results with no error signal.
-
-================================================================================
-  GLM-OCR:BF16 TEST (tested 2026-04-10)
-================================================================================
-
-[38] glm-ocr:bf16             ~2.2 GB    Score: 1/6   FAIL  (alias of glm-ocr:latest)
-     Detections : 2 (same result as glm-ocr:latest)
-     Inference time: N/A — not re-run; identical model
-     Failure reason: glm-ocr:bf16 shares the exact same Ollama digest (6effedd0dc8a)
-     as glm-ocr:latest — they are the same model weights under a different tag alias.
-     Testing it would produce byte-for-byte identical results to glm-ocr:latest (Score 1/6,
-     2 detections, valid JSON, but coordinates are wrong — see Round 4 notes).
-     CORRECTIONS to prior records:
-       1. The skip list entry "bf16 unquantized — likely >16 GB" was INCORRECT.
-          The model is F16 quantization on 1.1B parameters = 2.2 GB, not >16 GB.
-       2. The failure categories line listing glm-ocr:bf16 as a "GGML/tensor crash"
-          was an incorrect extrapolation from glm-ocr:q8_0's crash — it was never
-          actually tested, and the model runs fine (same binary as :latest).
-     VERDICT: NOT SUITABLE. Same result as glm-ocr:latest — valid JSON but only 2
-     detections with wrong coordinates. Inherits all the limitations of that model.
-     No further testing needed; treat as duplicate of glm-ocr:latest.
-
-================================================================================
-  MISTRAL-SMALL3.2:LATEST TEST (tested 2026-04-10)
-================================================================================
-
-[39] mistral-small3.2:latest  ~15.0 GB   Score: 0/6   SKIPPED (too large)
-     Detections : 0
-     Inference time: N/A — pull cancelled
-     Failure reason: Model is ~15 GB, far exceeding the 8 GB VRAM limit.
-     Pull was started but cancelled after confirming the download size (15 GB / ~1h10m).
-     At 15 GB this would behave identically to ministral-3:14b [35] — significant CPU
-     offload causing inference time well beyond the 300s timeout. The model is also
-     text-only (no vision encoder per skip list entry) so even if it completed it would
-     hallucinate detections like ministral-3:3b [36] and :8b [37].
-     NOTE: mistral-small3.2:latest IS a valid Ollama tag (pull started successfully,
-     unlike the bare "mistral-small3.2" tag which does not resolve).
-     VERDICT: NOT SUITABLE. Too large for 8 GB VRAM, and text-only — two independent
-     disqualifiers. Would need a 24 GB+ VRAM GPU to even attempt inference.
-
-================================================================================
-  MISTRAL-SMALL3.1:LATEST TEST (tested 2026-04-10)
-================================================================================
-
-[40] mistral-small3.1:latest  ~15.0 GB   Score: 0/6   TIMEOUT
-     Detections : 0
-     Inference time: 986.84s total wall time (300s timeout fired, but thread ran to 987s)
-     JSON valid : False — no output produced
-     Failure reason: 15 GB model on 8 GB VRAM causes massive CPU offload.
-     Inference never completed within the 300s limit; the ollama.chat call took 987s total.
-     Worse than ministral-3:14b [35] which ran 676s — the additional 9B parameters
-     (24B vs 14B) add ~5 extra minutes of CPU-offloaded inference.
-     NOTE on elapsed time: utils.py ollama_chat_with_timeout uses ThreadPoolExecutor
-     which raises TimeoutError at 300s but then waits for the thread to fully complete
-     (executor.shutdown(wait=True) in the context manager __exit__). The reported
-     986s is the true wall time of the Ollama request, not the Python timeout.
-     NOTE on vision: The skip list said "text-only LLM — no vision encoder" but
-     `ollama show` confirms it HAS vision capability. The suitability question is moot
-     given the VRAM constraint — it cannot produce output on this hardware.
-     Same digest as mistral-small3.1:24b (b9aaf0c2586a) — identical model.
-     VERDICT: NOT SUITABLE. VRAM bottleneck makes inference impossible on 8 GB GPU.
-     Would need 24 GB+ VRAM to complete within the 300s timeout.
-
-================================================================================
-  MISTRAL-SMALL3.1:24B TEST (tested 2026-04-10)
-================================================================================
-
-[41] mistral-small3.1:24b     ~15.0 GB   Score: 0/6   TIMEOUT  (alias of :latest)
-     Detections : 0
-     Inference time: N/A — not re-run; identical model to [40]
-     Failure reason: mistral-small3.1:24b shares the exact same Ollama digest
-     (b9aaf0c2586a) as mistral-small3.1:latest [40] — same 15 GB weights, same result.
-     Testing it would produce identical output: timeout at ~987s wall time, 0 detections.
-     VERDICT: NOT SUITABLE. Identical to [40] in every respect.
-
-  FINAL CUMULATIVE TOTAL: 0 / 41 models passed across all rounds
-
-================================================================================
-  Rounds completed:
-    Round 9 (2026-04-10): mistral-small3.2:latest (too large + text-only — pull cancelled)
-    Round 10 (2026-04-10): mistral-small3.1:latest (15 GB — TIMEOUT at 987s; has vision but VRAM-constrained)
-    Round 11 (2026-04-10): mistral-small3.1:24b (alias of :latest — same digest, same result)
 ================================================================================
 END OF REPORT
 ================================================================================
