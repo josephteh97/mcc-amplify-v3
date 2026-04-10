@@ -546,7 +546,7 @@ BUDGET BREAKDOWN (if you buy)
 
 
 ================================================================================
-  FINAL CUMULATIVE TOTAL: 0 / 35 models passed across all rounds
+  FINAL CUMULATIVE TOTAL: 0 / 36 models passed across all rounds
 ================================================================================
 
   Rounds completed:
@@ -556,6 +556,7 @@ BUDGET BREAKDOWN (if you buy)
     Round 4 (2026-04-09): 17 models — parallel session (qwen3.5, qwen3-vl, gemma3:12b,
                            translategemma, ministral-3, devstral, glm-ocr, mistral-small)
     Round 5 (2026-04-10): glm-ocr:q8_0, ministral-3:14b
+    Round 6 (2026-04-10): ministral-3:3b (confirmed vision-incapable)
 
   Failure categories across all 35 models:
     GGML/tensor crash       : 3  (qwen2.5vl:7b, glm-ocr:q8_0, glm-ocr:bf16)
@@ -570,6 +571,34 @@ BUDGET BREAKDOWN (if you buy)
 
   CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
   Use YOLO (column-detect.pt) for production. Use OpenAI GPT-4o for cloud-based refinement.
+
+================================================================================
+  MINISTRAL-3:3B TEST (tested 2026-04-10)
+================================================================================
+
+[36] ministral-3:3b           ~3.0 GB    Score: 2/6   FAIL
+     Detections : 86 (columns=54, grid_lines=31, other=1)
+     Inference time: 65.23s
+     JSON valid : True
+     Failure reason: ministral-3:3b has NO vision encoder — it cannot see the image.
+     Despite receiving the image in the Ollama messages payload, the model ignores it
+     and hallucinates a plausible-looking JSON array. Coordinates follow a regular
+     30-50 px stepped pattern from the top-left corner (e.g. [100,100,130,150],
+     [150,100,180,140], [200,100,230,140]...) — clear evidence of fabrication, not
+     detection. The model is a pure text LLM (Mistral 3B edge variant) with no
+     multimodal capability.
+     Score breakdown:
+       JSON valid        : YES (+1) — well-formed array, all keys present
+       Has detections    : YES (+1) — 86 items returned
+       Count in range    : YES (86 is 5-200) — but fabricated
+       Precision > 0.20  : NO  — hallucinated bboxes, no IoU match to GT columns
+       Recall > 0.30     : NO  — no real detections
+       F1 > 0.25         : NO
+     VERDICT: NOT SUITABLE. Looks deceptively good (valid JSON, plausible count) but
+     is entirely hallucinated. Any pipeline using ministral-3:3b for detection would
+     silently produce meaningless results with no error signal.
+
+  FINAL CUMULATIVE TOTAL: 0 / 36 models passed across all rounds
 
 ================================================================================
 END OF REPORT
