@@ -626,5 +626,62 @@ BUDGET BREAKDOWN (if you buy)
   ─────────────────────────────────────────────────────────────────────────
 
 ================================================================================
+  APPENDIX — VISION MODELS RANKED: FULL SUMMARY TABLE
+================================================================================
+
+  32 unique models (plus 4 alias tags) tested across 11 rounds on RTX 4000 (8 GB VRAM).
+  Zero models passed (threshold >=4/6 points).
+
+  HW Issue? — "Yes" = failure attributable to RTX 4000 hardware constraints (VRAM/RAM).
+               "No"  = failure due to model architecture, training domain, or runtime bug.
+  Alias      — (=X) = identical Ollama digest; result is the same as the aliased entry.
+
+  Rank  Model                      GB    Score  Dets  Status       HW?  Root Cause
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+     1  gemma4:e4b                 9.6   3/6    73    FAIL          No   Hallucinated coords; 73 cols packed in single row
+    1=  gemma4:latest              9.6   3/6    73    FAIL          No   Alias of :e4b (same digest)
+     2  gemma3:12b                 8.1   3/6    26    FAIL          No   Hallucinated even-spaced single-row pattern
+     3  qwen2.5vl:7b               6.0   3/6    12    FAIL          No   Valid JSON; bounding box coords incorrect
+     4  gemma4:e2b                 7.2   3/6     9    FAIL          No   Hallucinated even-spaced coords (x=200,300,400,500)
+     5  minicpm-v:8b               5.5   3/6     9    FAIL          No   Valid JSON; bounding box coords incorrect
+     6  granite3.2-vision:2b       1.9   3/6     8    FAIL          No   Valid JSON; bounding box coords incorrect
+     7  ministral-3:latest         6.0   2/6    79    FAIL          No   No vision encoder; text-only fake JSON
+     8  ministral-3:3b             3.0   2/6    86    FAIL          No   No vision encoder; text-only fake JSON
+     9  ministral-3:8b             6.0   2/6    85    FAIL          No   No vision encoder; text-only fake JSON
+    10  gemma3:4b                  3.0   2/6     4    FAIL          No   Coords incorrect; too few detections
+    11  llama3.2-vision:11b        7.9   2/6     4    FAIL         Yes   VRAM limit; 7.9 GB -> heavy CPU offload -> degraded quality
+    12  qwen2.5vl:3b               3.2   2/6     1    FAIL          No   Only 1 detection; coords incorrect
+    13  qwen3-vl:4b                3.5   2/6     1    FAIL          No   Thinking model; exhausts token budget before JSON output
+    14  glm-ocr:latest             2.2   1/6     2    FAIL          No   OCR-tuned; not trained for spatial detection
+   14=  glm-ocr:bf16               2.2   1/6     2    FAIL          No   Alias of :latest (same digest)
+    15  moondream:latest           1.7   1/6     0    FAIL          No   Cannot produce structured JSON output
+    16  qwen3.5:2b                 2.7   1/6     0    FAIL          No   Text-only model; no vision encoder
+    17  llava-phi3:3.8b            2.9   0/6     2    FAIL          No   CLIP runner bug; echoes prompt (fixed in Ollama 0.20.4)
+    18  qwen3.5:9b                 6.6   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+    19  qwen3-vl:2b                1.9   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+    20  qwen3-vl:8b                6.1   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+   20=  qwen3-vl:latest            6.1   0/6     0    FAIL          No   Alias of :8b (same digest)
+    21  qwen3.5:4b                ~3.5   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+    22  qwen3.5:0.8b              ~0.7   0/6     0    FAIL          No   Thinking+vision hybrid; empty output after chain-of-thought
+    23  translategemma              —    0/6     0    FAIL          No   No vision capability; NLP translation model
+    24  devstral                    —    0/6     0    FAIL          No   No vision capability; code generation model
+    25  deepseek-ocr:3b            2.0   0/6     0    FAIL          No   OCR-tuned; not trained for spatial detection
+    26  ministral-3:14b            9.1   0/6     0    TIMEOUT      Yes   VRAM limit; 9.1 GB -> OOM/swap -> 676s timeout
+    27  mistral-small3.1:latest   15.0   0/6     0    TIMEOUT      Yes   VRAM limit; 15 GB far exceeds 8 GB -> 987-1686s timeout
+   27=  mistral-small3.1:24b      15.0   0/6     0    TIMEOUT      Yes   Alias of :latest (same digest)
+    28  llama4:16x17b             67.0   0/6     0    OOM          Yes   67 GB far exceeds 8 GB VRAM; immediate abort
+    29  bakllava:7b                4.7   0/6     0    CRASH         No   CLIP runner bug; HTTP 500 (Ollama <=0.20.4)
+    30  llava:7b                   4.7   0/6     0    CRASH         No   CLIP runner bug; HTTP 500 (unfixed in Ollama 0.20.4)
+    31  llava-llama3:8b            5.5   0/6     0    CRASH         No   CLIP runner bug; HTTP 500 (Ollama <=0.20.4)
+    32  glm-ocr:q8_0               1.6   0/6     0    CRASH         No   GGML tensor assertion; Q8_0 incompatible with vision encoder
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+
+  Models passed      : 0 / 32   (32 unique + 4 alias tags)
+  HW-based failures  : 5   (llama3.2-vision:11b, ministral-3:14b, mistral-small3.1:latest, :24b, llama4:16x17b)
+  Model-based failures: 27  (all remaining entries)
+  Baseline           : SEA-LION v4 4B (~3.3 GB) — P=0.254  R=0.728  F1=0.376
+  Environment        : Ubuntu · Ollama 0.18.3->0.20.4 · NVIDIA Quadro RTX 4000 (8 GB VRAM) · 33 GB RAM
+
+================================================================================
 END OF REPORT
 ================================================================================
