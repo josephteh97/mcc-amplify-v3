@@ -136,14 +136,18 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                    Not re-run; result is effectively identical (73 hallucinated columns).
 
 [29] gemma3:12b              ~8.1 GB    Score: 3/6   FAIL
-     Detections : 26 (5 columns + 21 grid lines)
-     Inference  : 229s (8.1 GB on 8 GB VRAM — CPU offload)
+     Detections : Run 1: 26  |  Run 2 (retest): 30  — hallucination CONFIRMED
+     Inference  : ~229-238s (8.1 GB on 8 GB VRAM — CPU offload)
      JSON rate  : 100%
-     Failure    : Coordinates appear geometrically regular. 5 columns all at y=243-278,
-                  evenly spaced at 255 px x-intervals (x=122, 377, 632, 900, 1165) — likely
-                  hallucinated single-row pattern. 21 grid_lines span full image width (0-1280)
-                  at evenly spaced y positions. Box size 35x35 px is correct for GT columns
-                  but positions are not verified (P/R/F1 not evaluated — single-tile batch test).
+     Failure    : HALLUCINATION CONFIRMED across 2 independent runs:
+                  Run 1 (batch): 26 dets — 5 cols in a single row (y=243-278), 255 px x-spacing,
+                    plus 21 grid_lines at even y-intervals spanning full image width.
+                  Run 2 (retest 2026-04-10): 30 dets — perfect 3x10 uniform grid:
+                    x positions: 133, 253, 373 (120 px apart)
+                    y positions: 133, 253, 373, 493, 613, 733, 853, 973, 1093, 1213 (120 px apart)
+                    All conf=0.95, all 20x20 px boxes.
+                  Both runs produce a fabricated regular grid pattern — different each time,
+                  neither matching the actual floor plan geometry. Not a reliable detector.
      NOTE       : gemma3:12b and gemma3:12b-it-qat are different models (different digests).
                   Only gemma3:12b (f4031aab637d) was tested here.
 
@@ -640,7 +644,7 @@ BUDGET BREAKDOWN (if you buy)
   ──────────────────────────────────────────────────────────────────────────────────────────────
      1  gemma4:e4b                 9.6   3/6    73    FAIL          No   Hallucinated coords; 73 cols packed in single row
     1=  gemma4:latest              9.6   3/6    73    FAIL          No   Alias of :e4b (same digest)
-     2  gemma3:12b                 8.1   3/6    26    FAIL          No   Hallucinated even-spaced single-row pattern
+     2  gemma3:12b                 8.1   3/6   26/30  FAIL          No   Hallucination confirmed (2 runs): fabricated uniform grids, different each time
      3  qwen2.5vl:7b               6.0   3/6    12    FAIL          No   Valid JSON; bounding box coords incorrect
      4  gemma4:e2b                 7.2   3/6     9    FAIL          No   Hallucinated even-spaced coords (x=200,300,400,500)
      5  minicpm-v:8b               5.5   3/6     9    FAIL          No   Valid JSON; bounding box coords incorrect
