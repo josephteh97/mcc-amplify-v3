@@ -52,12 +52,12 @@ BASELINE (SEA-LION v4 4B — the original detection model)
    2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL
    3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL  * memory injection tested
    4    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
-   5    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL
+   5    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL  * memory injection tested
    6    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
    7    ministral-3:latest        6.0     2/6    79    0.000  0.000  0.000   FAIL  (no vision)
    8    ministral-3:3b            3.0     2/6    86    0.000  0.000  0.000   FAIL  (no vision)
    9    ministral-3:8b            6.0     2/6    85    0.000  0.000  0.000   FAIL  (no vision)
-  10    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL
+  10    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL  * memory injection tested
   11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
   12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
   13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL
@@ -169,11 +169,27 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  and cannot use in-context examples to guide new detections.
 
 [3] minicpm-v:8b             ~5.5 GB    Score: 3/6   FAIL
-    Detections : 9 after NMS
-    Inference  : ~4s/tile
+    Detections : Original: 9 after NMS  |  Retest: 11  |  Memory-anchor: 5  |  Memory-addonly: 4
+    Inference  : ~10-57s/tile (768x768 input)
     JSON rate  : 100%
-    Failure    : Detected boxes are 200-300 px wide — far larger than 40-50 px GT columns.
-                 None of the 9 detections overlaps a GT box at IoU>=0.25.
+    Failure    : HALLUCINATION CONFIRMED (retest 2026-04-10):
+                 Baseline — 11 dets, all at x=324-372 (center ~348, near GT column 3 x-strip),
+                 y=168 to 648 at perfectly even 48px steps. Shape field copied verbatim from
+                 prompt enum ("square|rectangle|round|i_beam") instead of choosing one.
+                 Right x-strip, fully invented y positions.
+    Episodic memory tests (2026-04-10, 768px input):
+                 Memory-ANCHOR (5 GT boxes as visual anchors):
+                   Returned exactly the 5 injected examples verbatim — same echo behaviour
+                   as qwen2.5vl:7b. Treats examples as the answer, not as visual guidance.
+                 Memory-ADDONLY ("already found, find the others"):
+                   Returned 4 new detections NOT in the GT list. Box sizes 31x31 px are
+                   within correct range (25-40 px). Positions (x~231/330, y~360/510) do not
+                   match actual GT columns but the model genuinely searched the image.
+                   This is the strongest memory-injection response seen so far — but still
+                   no real GT columns found (wrong x-positions entirely).
+                 Conclusion: echo behaviour identical to qwen2.5vl. Add-only variant shows
+                 minicpm can attempt new detections of the right size — but cannot accurately
+                 localize structural symbols without fine-tuning.
     Special    : Crashes with HTTP 500 at vision_size=512 and 1024. Only runs at 768 px —
                  resolution-specific bug in the minicpm GGUF vision encoder.
 
@@ -193,13 +209,29 @@ BASELINE (SEA-LION v4 4B — the original detection model)
 ================================================================================
 
 [5] gemma3:4b                ~3.0 GB    Score: 2/6   FAIL
-    Detections : 4 after NMS
-    Inference  : ~7s/tile
+    Detections : Original: 4 after NMS  |  Retest baseline: 72  |  Memory-anchor: 23  |  Memory-addonly: 25
+    Inference  : ~23-74s/tile (1024x1024 input)
     JSON rate  : 100%
-    Failure    : Too few detections (count=4; rubric requires >=5). Overly conservative —
-                 outputs one detection per tile regardless of content. All 4 detections have
-                 wrong coordinates. Has vision capability but struggles with schematic line-
-                 drawing floor plan style.
+    Failure    : Original run — overly conservative: 4 dets, one per tile, wrong coords.
+    Retest baseline CONFIRMED HALLUCINATION (2026-04-10) — different failure mode triggered
+                 by prompt change ("expect 20 or more"):
+                 72 degenerate bboxes with x1=x2 (width=0, height=672-770 px) — vertical line
+                 segments spanning image height, not column boxes. Only 2 distinct x positions
+                 (x=38 and x=136). Model is outputting wall/grid line x-coordinates as columns.
+    Episodic memory tests (2026-04-10, 1024px input):
+                 Memory-ANCHOR (5 GT boxes as visual anchors):
+                   5 echoed exactly, then 18 more generated in the same left x-strip (x~51-94).
+                   Box sizes 32-41 px wide, 29-43 px tall — CORRECT size range.
+                   gemma3:4b is the only model so far to extend anchors to NEW y-positions in
+                   the same column strip rather than pure echo. More spatially aware than
+                   qwen2.5vl and minicpm — but only found 1 of 5 column strips.
+                 Memory-ADDONLY ("already found, find the others"):
+                   25 detections — all "sliding echo": 5 slight x-offset variants per GT
+                   example ([16,129,55,168], [36,129,80,168], [56,129,94,168]...). Generates
+                   multiple overlapping copies shifted by ~10-20 px rather than new positions.
+                 Conclusion: strongest memory-injection response seen — anchor phase shows
+                 genuine spatial extension (not pure echo). But model cannot generalise to the
+                 other 4 column strips; fine-tuning required for reliable detection.
 
 [6] llama3.2-vision:11b      ~7.9 GB    Score: 2/6   FAIL   * STRONGEST ARCHITECTURE
     Detections : 4 after NMS
@@ -657,12 +689,12 @@ BUDGET BREAKDOWN (if you buy)
      2  gemma3:12b                 8.1   3/6   26/30  FAIL          No   Hallucination confirmed (2 runs): fabricated uniform grids, different each time
      3  qwen2.5vl:7b               6.0   3/6    12    FAIL          No   Hallucination confirmed; episodic memory injection echoes examples, no new detections
      4  gemma4:e2b                 7.2   3/6     9    FAIL          No   Hallucinated even-spaced coords (x=200,300,400,500)
-     5  minicpm-v:8b               5.5   3/6     9    FAIL          No   Valid JSON; bounding box coords incorrect
+     5  minicpm-v:8b               5.5   3/6     9    FAIL          No   Hallucination confirmed; add-only memory injection finds new boxes (right size, wrong position)
      6  granite3.2-vision:2b       1.9   3/6     8    FAIL          No   Valid JSON; bounding box coords incorrect
      7  ministral-3:latest         6.0   2/6    79    FAIL          No   No vision encoder; text-only fake JSON
      8  ministral-3:3b             3.0   2/6    86    FAIL          No   No vision encoder; text-only fake JSON
      9  ministral-3:8b             6.0   2/6    85    FAIL          No   No vision encoder; text-only fake JSON
-    10  gemma3:4b                  3.0   2/6     4    FAIL          No   Coords incorrect; too few detections
+    10  gemma3:4b                  3.0   2/6     4    FAIL          No   Hallucination confirmed (zero-width line bboxes); anchor memory extends to new y-positions (best spatial response so far)
     11  llama3.2-vision:11b        7.9   2/6     4    FAIL         Yes   VRAM limit; 7.9 GB -> heavy CPU offload -> degraded quality
     12  qwen2.5vl:3b               3.2   2/6     1    FAIL          No   Only 1 detection; coords incorrect
     13  qwen3-vl:4b                3.5   2/6     1    FAIL          No   Thinking model; exhausts token budget before JSON output
