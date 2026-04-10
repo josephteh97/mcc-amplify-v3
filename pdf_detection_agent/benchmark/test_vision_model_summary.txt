@@ -60,7 +60,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   10    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL  * memory injection tested
   11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
   12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
-  13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL
+  13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL  * memory injection tested
   14    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL
   14=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)
   15    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
@@ -273,11 +273,23 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  valid JSON structure. Single detection has wrong coordinates.
 
 [8] qwen3-vl:4b              ~3.5 GB    Score: 2/6   FAIL
-    Detections : 1 after NMS
-    Inference  : ~27s/tile
-    JSON rate  : 100%
-    Failure    : Same pattern as qwen2.5vl:3b — overly cautious, almost always returns
-                 {"columns": []}. Refuses to commit to detections in complex floor plan tiles.
+    Detections : 1 after NMS  (original)  |  Retest: 0 across all configurations
+    Inference  : ~27s/tile (original)  |  58-131s (retest — thinking overhead)
+    JSON rate  : 100% (original)  |  0% (retest — all token budgets exhausted by thinking)
+    Failure    : Original: same pattern as qwen2.5vl:3b — overly cautious, returns empty list.
+    Retest CONFIRMED non-functional (2026-04-10):
+                 Tested 4 configurations — 0 output in all cases:
+                   baseline num_predict=8192: 33,544 chars internal thinking → 0 chars output
+                   baseline think=False:      16,448 chars thinking → 0 chars output
+                   memory-anchor (8192):      25,772 chars thinking → 0 chars output
+                   memory-addonly (8192):     29,257 chars thinking → 0 chars output
+                 think=False halved thinking verbosity but did NOT suppress it —
+                 qwen3-vl-thinking renderer runs a structural chain-of-thought that cannot
+                 be disabled via Ollama options. Model exhausts every token budget before
+                 emitting a single character of actual response.
+                 Memory injection: not testable — model never reaches output stage.
+                 Conclusion: qwen3-vl:4b is non-functional for structured JSON detection
+                 tasks under any Ollama parameter configuration tested.
 
 --- TEXT-ONLY IMPOSTORS — no vision encoder; 2/6 score is a rubric artefact, not real capability ---
 
@@ -718,7 +730,7 @@ BUDGET BREAKDOWN (if you buy)
     10  gemma3:4b                  3.0   2/6     4    FAIL          No   Hallucination confirmed (zero-width line bboxes); anchor memory extends to new y-positions (best spatial response so far)
     11  llama3.2-vision:11b        7.9   2/6     4    FAIL         Yes   VRAM limit; 7.9 GB -> heavy CPU offload -> degraded quality
     12  qwen2.5vl:3b               3.2   2/6     1    FAIL          No   Only 1 detection; coords incorrect
-    13  qwen3-vl:4b                3.5   2/6     1    FAIL          No   Thinking model; exhausts token budget before JSON output
+    13  qwen3-vl:4b                3.5   2/6     1    FAIL          No   Thinking model; exhausts ALL token budgets (even 8192) on CoT — 0 output in all configs tested
     14  glm-ocr:latest             2.2   1/6     2    FAIL          No   OCR-tuned; not trained for spatial detection
    14=  glm-ocr:bf16               2.2   1/6     2    FAIL          No   Alias of :latest (same digest)
     15  moondream:latest           1.7   1/6     0    FAIL          No   Cannot produce structured JSON output
