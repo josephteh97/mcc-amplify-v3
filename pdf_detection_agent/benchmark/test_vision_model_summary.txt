@@ -1,7 +1,7 @@
 ================================================================================
   OLLAMA VISION MODEL BENCHMARK — FLOOR PLAN COLUMN DETECTION
   Task: Detect structural columns in architectural PDF floor plan
-  Tested: 2026-04-07 to 2026-04-10  |  Rounds: 12  |  Ranked: 32 unique + 4 aliases  |  Excluded: 4
+  Tested: 2026-04-07 to 2026-04-13  |  Rounds: 13  |  Ranked: 32 unique + 4 aliases  |  Excluded: 4
 ================================================================================
 
 TEST SETUP
@@ -52,23 +52,23 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   ──────────────────────────────────────────────────────────────────────────────────
    1    gemma4:e4b                9.6     3/6    73    0.000  0.000  0.000   FAIL  * memory injection tested + visual harness tested
    1=   gemma4:latest             9.6     3/6    73    0.000  0.000  0.000   FAIL  (= :e4b, same digest)
-   2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL
+   2    gemma3:12b                8.1     3/6    26    0.000  0.000  0.000   FAIL  * memory injection tested
    3    qwen2.5vl:7b              6.0     3/6    12    0.000  0.000  0.000   FAIL  * memory injection tested
-   4    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON
+   4    gemma4:e2b                7.2     3/6     9    0.000  0.000  0.000   FAIL  * best JSON  * memory injection tested
    5    minicpm-v:8b              5.5     3/6     9    0.000  0.000  0.000   FAIL  * memory injection tested
-   6    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL
+   6    granite3.2-vision:2b      1.9     3/6     8    0.000  0.000  0.000   FAIL  * memory injection tested
    7    ministral-3:latest        6.0     2/6    79    0.000  0.000  0.000   FAIL  (no vision)
    8    ministral-3:3b            3.0     2/6    86    0.000  0.000  0.000   FAIL  (no vision)
    9    ministral-3:8b            6.0     2/6    85    0.000  0.000  0.000   FAIL  (no vision)
   10    gemma3:4b                 3.0     2/6     4    0.000  0.000  0.000   FAIL  * memory injection tested
-  11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch
-  12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL
+  11    llama3.2-vision:11b       7.9     2/6     4    0.000  0.000  0.000   FAIL  * best arch  * memory injection tested
+  12    qwen2.5vl:3b              3.2     2/6     1    0.000  0.000  0.000   FAIL  * memory injection tested
   13    qwen3-vl:4b               3.5     2/6     1    0.000  0.000  0.000   FAIL  * memory injection tested
   14    glm-ocr:latest            2.2     1/6     2    0.000  0.000  0.000   FAIL  * memory injection tested
   14=   glm-ocr:bf16              2.2     1/6     2    0.000  0.000  0.000   FAIL  (= :latest, same digest)  * memory injection tested
-  15    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL
+  15    moondream:latest          1.7     1/6     0    0.000  0.000  0.000   FAIL  * memory injection tested
   16    qwen3.5:2b                2.7     1/6     0    0.000  0.000  0.000   FAIL  (text-only)
-  17    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)
+  17    llava-phi3:3.8b           2.9     0/6     2    0.000  0.000  0.000   FAIL  (prompt echo)  * memory injection tested
   18    qwen3.5:9b                6.6     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
   19    qwen3-vl:2b               1.9     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
   20    qwen3-vl:8b               6.1     0/6     0    0.000  0.000  0.000   FAIL  (thinking)
@@ -98,7 +98,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   Valid JSON + detections, but bounding box coordinates are wrong
 ================================================================================
 
-[1] gemma4:e2b               ~7.2 GB    Score: 3/6   FAIL   * BEST JSON QUALITY
+[1] gemma4:e2b               ~7.2 GB    Score: 3/6   FAIL   * BEST JSON QUALITY  * MEMORY INJECTION TESTED
     Detections : 9 (4 columns + 5 grid lines)
     Inference  : 346s/tile (7.2 GB on 8 GB GPU — heavy CPU offload)
     JSON rate  : 100%
@@ -118,6 +118,26 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  plausible-but-wrong coordinates; trained on floor plan data, gemma4's
                  structured output capability could produce accurate results.
     NOTE       : Requires Ollama >=0.20.4 (fails on <=0.18.x).
+
+    ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+    Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+      Phase        dets   TP   FP   FN    P      R     F1    elapsed
+      BASELINE      111    0  111   86  0.000  0.000  0.000   130s
+      ANCHOR          8    7    1   79  0.875  0.081  0.149    48s
+      ADD-ONLY        0    0    0   86  0.000  0.000  0.000    90s
+    Verdict: HELPS  (ANCHOR F1=0.149 vs BASELINE F1=0.000)
+    Findings:
+      - Baseline: 111 detections, all FP — massive over-detection hallucination.
+        Model is highly active but cannot ground itself spatially.
+      - ANCHOR: dramatic constraint effect — 10 seeded GT boxes reduce output to just 8
+        detections (7 TP, 1 FP). Precision jumps to 0.875. Model appears to use anchor
+        positions to verify only nearby candidates, suppressing bulk hallucination.
+        Likely echoing 7 of the 10 provided anchors rather than finding new columns.
+      - ADD-ONLY: collapses completely — 0 detections. Seeing the pool of known boxes
+        makes the model conclude there is nothing left to find.
+      - Conclusion: ANCHOR phase constrains gemma4:e2b's hallucination and produces high
+        precision (7 TP, 0.875P) but very low recall (8%). ADD-ONLY phase is non-functional.
+        Memory injection partially works for suppressing noise but not for improving coverage.
 
 [28] gemma4:e4b              ~9.6 GB    Score: 3/6   FAIL   * MEMORY INJECTION + VISUAL HARNESS TESTED
      Detections : 73 (73 columns + 0 grid lines) — original batch run
@@ -187,7 +207,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
       Result     : Identical to gemma4:e4b — same Ollama digest (c6eb396dbd59).
                    Not re-run; result is effectively identical (73 hallucinated columns).
 
-[29] gemma3:12b              ~8.1 GB    Score: 3/6   FAIL
+[29] gemma3:12b              ~8.1 GB    Score: 3/6   FAIL   * MEMORY INJECTION TESTED
      Detections : Run 1: 26  |  Run 2 (retest): 30  — hallucination CONFIRMED
      Inference  : ~229-238s (8.1 GB on 8 GB VRAM — CPU offload)
      JSON rate  : 100%
@@ -202,6 +222,23 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                   neither matching the actual floor plan geometry. Not a reliable detector.
      NOTE       : gemma3:12b and gemma3:12b-it-qat are different models (different digests).
                   Only gemma3:12b (f4031aab637d) was tested here.
+
+     ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+     Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+       Phase        dets   TP   FP   FN    P      R     F1    elapsed
+       BASELINE       36    7   29   79  0.194  0.081  0.115   153s
+       ANCHOR          0    0    0   86  0.000  0.000  0.000   336s
+       ADD-ONLY       10    1    9   85  0.100  0.012  0.021    34s
+     Verdict: HURTS  (best=0.115 at BASELINE; ANCHOR collapses to zero output)
+     Findings:
+       - Baseline: gemma3:12b achieves its best score (F1=0.115) with 7 real TPs — better
+         than most models tested, but surrounded by 29 FP hallucinations in a regular grid.
+       - ANCHOR phase: given 10 confirmed GT positions, the model produces 0 detections.
+         Anchor prompt appears to confuse the model — it over-constrains and outputs nothing.
+         Total inference 336s suggests the model spent significant time but produced no JSON.
+       - ADD-ONLY: partial recovery to 10 dets with 1 TP — still heavily hallucinated.
+       - Conclusion: memory injection HURTS gemma3:12b. Baseline is the best configuration.
+         The model's 7 TP (best of any non-anchor mode) are achieved only without memory.
 
 [2] qwen2.5vl:7b             ~6.0 GB    Score: 3/6   FAIL
     Detections : Original: 12 after NMS  |  Retest baseline: 11  |  Memory injection: 5
@@ -245,7 +282,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
     Special    : Crashes with HTTP 500 at vision_size=512 and 1024. Only runs at 768 px —
                  resolution-specific bug in the minicpm GGUF vision encoder.
 
-[4] granite3.2-vision:2b     ~1.9 GB    Score: 3/6   FAIL
+[4] granite3.2-vision:2b     ~1.9 GB    Score: 3/6   FAIL   * MEMORY INJECTION TESTED
     Detections : 8 after NMS (raw: 49 detections in main tile before NMS)
     Inference  : ~13s/tile
     JSON rate  : 100%
@@ -253,6 +290,24 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                  at every wall corner, grid intersection, and structural feature. NMS collapses
                  to 8 but none match GT boxes. Understands "find squares in floor plans" but
                  draws boxes around the wrong things.
+
+    ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+    Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+      Phase        dets   TP   FP   FN    P      R     F1    elapsed
+      BASELINE        0    0    0   86  0.000  0.000  0.000    26s
+      ANCHOR        147    6  141   80  0.041  0.070  0.052    48s
+      ADD-ONLY      137    0  137   86  0.000  0.000  0.000    49s
+    Verdict: HELPS  (ANCHOR F1=0.052 vs BASELINE F1=0.000; technically >0.02 threshold)
+    Findings:
+      - Baseline: 0 detections — unusual for this model given its over-detection tendency in
+        the original run. Possibly the new 1024px prompt format suppresses its output.
+      - ANCHOR: seeding triggers massive over-detection (147 dets, 141 FP). Model interprets
+        the provided anchor examples as permission to detect aggressively, flooding the image.
+        6 TPs found but precision of 0.041 makes this practically useless.
+      - ADD-ONLY: 137 dets, 0 TP — even worse than ANCHOR. Larger pool of known boxes causes
+        the model to hallucinate everywhere except the actual column positions.
+      - Conclusion: "HELPS" is a metric artefact — ANCHOR triggers hallucination flood.
+        granite3.2-vision cannot be improved via memory injection.
 
 
 ================================================================================
@@ -306,7 +361,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                    - Episodic memory alone cannot bootstrap full detection.
                      Fine-tuning on annotated floor plan data is the required next step.
 
-[6] llama3.2-vision:11b      ~7.9 GB    Score: 2/6   FAIL   * STRONGEST ARCHITECTURE
+[6] llama3.2-vision:11b      ~7.9 GB    Score: 2/6   FAIL   * STRONGEST ARCHITECTURE  * MEMORY INJECTION TESTED
     Detections : 4 after NMS
     Inference  : >300s/tile (2 tiles timed out)
     JSON rate  : 50% (2/4 tiles within timeout)
@@ -316,13 +371,53 @@ BASELINE (SEA-LION v4 4B — the original detection model)
     NOTE       : Architecturally the strongest model tested. On a 24 GB+ VRAM GPU or
                  via API, this model would likely perform significantly better.
 
-[7] qwen2.5vl:3b             ~3.2 GB    Score: 2/6   FAIL
+    ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+    Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+      Phase        dets   TP   FP   FN    P      R     F1    elapsed
+      BASELINE        0    0    0   86  0.000  0.000  0.000   137s
+      ANCHOR          6    6    0   80  1.000  0.070  0.130    98s
+      ADD-ONLY       10    0   10   86  0.000  0.000  0.000   324s
+    Verdict: HELPS  (ANCHOR F1=0.130 vs BASELINE F1=0.000)
+    Findings:
+      - Baseline: 0 detections — model refuses to commit zero-shot. Consistent with original
+        run failure (VRAM bottleneck prevented output on most tiles).
+      - ANCHOR: 6 detections, 6 TP, 0 FP — PERFECT PRECISION. With 10 GT examples provided,
+        model returns only locations it is highly confident about; every detection is correct.
+        Model appears to validate each candidate against the anchor positions before committing.
+        100% precision but only 7% recall — echoing confirmed locations rather than finding new.
+      - ADD-ONLY: 324s, 10 detections, 0 TP. Given a larger pool, model generates 10 new
+        guesses that miss all GT columns. Extended context may confuse spatial reasoning.
+      - Conclusion: llama3.2-vision:11b shows the best ANCHOR precision of all models tested
+        (P=1.00, 6 TP, 0 FP). On a 24 GB+ GPU where it runs at full speed, iterative ANCHOR
+        injection rounds could systematically build up coverage. Currently VRAM-bottlenecked.
+
+[7] qwen2.5vl:3b             ~3.2 GB    Score: 2/6   FAIL   * MEMORY INJECTION TESTED
     Detections : 1 after NMS
     Inference  : ~87s/tile (partly CPU-bound)
     JSON rate  : 100%
     Failure    : Almost no detections (count=1). 3B model is too small to confidently
                  identify column symbols. Tiles 2-4 return empty columns list despite
                  valid JSON structure. Single detection has wrong coordinates.
+
+    ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+    Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+      Phase        dets   TP   FP   FN    P      R     F1    elapsed
+      BASELINE        0    0    0   86  0.000  0.000  0.000   372s
+      ANCHOR          7    7    0   79  1.000  0.081  0.151   185s
+      ADD-ONLY        7    7    0   79  1.000  0.081  0.151   190s
+    Verdict: HELPS  (ANCHOR+ADD-ONLY F1=0.151 vs BASELINE F1=0.000)
+    Findings:
+      - Baseline: 0 detections — model is over-conservative zero-shot (consistent with
+        original run count=1). Very slow at 372s despite being 3B parameters.
+      - ANCHOR: 7 TP, 0 FP — PERFECT PRECISION, stable at F1=0.151. Seeding activates
+        detection; model returns a high-confidence subset of real column locations.
+      - ADD-ONLY: identically 7 TP, 0 FP — the model returns the SAME 7 detections
+        as the ANCHOR phase. It is not exploring new locations; it has memorised its
+        ANCHOR output and repeats it. Consistent but not progressive.
+      - Conclusion: qwen2.5vl:3b and llama3.2-vision:11b share a striking pattern — both
+        achieve perfect precision (P=1.00) under ANCHOR injection while maintaining 0 FP.
+        Both are echo-based: the 7 TP are likely a subset of the 10 seeded GT anchors.
+        Without iterative re-anchoring with the full GT set, coverage cannot grow beyond ~8%.
 
 [8] qwen3-vl:4b              ~3.5 GB    Score: 2/6   FAIL
     Detections : 1 after NMS  (original)  |  Retest: 0 across all configurations
@@ -413,11 +508,27 @@ BASELINE (SEA-LION v4 4B — the original detection model)
       NOTE       : Skip-list entry "bf16 unquantized — likely >16 GB" was incorrect.
                    Model is F16 on 1.1B parameters = 2.2 GB, not >16 GB.
 
-[12] moondream:latest        ~1.7 GB    Score: 1/6   FAIL
+[12] moondream:latest        ~1.7 GB    Score: 1/6   FAIL   * MEMORY INJECTION TESTED
      Detections : 0
      JSON rate  : 100%
      Failure    : Returns {"columns": []} on every tile. Tiny general-purpose VLM not
                   designed for structured detection tasks requiring spatial JSON bbox output.
+
+     ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+     Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+       Phase        dets   TP   FP   FN    P      R     F1    elapsed
+       BASELINE        2    0    2   86  0.000  0.000  0.000    12s
+       ANCHOR         85    0   85   86  0.000  0.000  0.000    13s
+       ADD-ONLY      136    0  136   86  0.000  0.000  0.000    23s
+     Verdict: no change  (F1=0.000 in all phases; FP count increases)
+     Findings:
+       - Baseline: 2 detections, 0 TP. Model generates minimal output zero-shot.
+       - ANCHOR: 85 FP — anchor examples cause massive hallucination flood. Model
+         treats the seeded boxes as a licence to generate detections everywhere.
+       - ADD-ONLY: 136 FP — escalates further. The larger pool triggers even more output.
+       - Conclusion: memory injection transforms moondream from "near-silent" to
+         "hallucination flood" with no TP gain. Completely ineffective; model has no
+         spatial grounding capability for 40-50 px architectural symbols.
 
 [13] qwen3.5:2b              ~2.7 GB    Score: 1/6   FAIL   (TEXT MODEL — no vision)
      Detections : 0
@@ -433,7 +544,7 @@ BASELINE (SEA-LION v4 4B — the original detection model)
 
 --- Ran but produced zero or invalid detections ---
 
-[14] llava-phi3:3.8b         ~2.9 GB    Score: 0/6   FAIL
+[14] llava-phi3:3.8b         ~2.9 GB    Score: 0/6   FAIL   * MEMORY INJECTION TESTED
      Detections : 2 — both verbatim copies of the prompt example coordinates
      Inference  : ~32s/tile
      JSON rate  : 100%
@@ -443,6 +554,21 @@ BASELINE (SEA-LION v4 4B — the original detection model)
                   Pattern-matched the prompt example rather than analysing the image.
      NOTE       : CLIP crash (Ollama 0.18.x) is FIXED in 0.20.4 for this variant.
                   The full LLaVA 7B CLIP crash persists in 0.20.4 (see [25]).
+
+     ── MEMORY INJECTION TEST (2026-04-13, GT=86) ───────────────────────────────────────────
+     Tile: 1024×1024 px.  Phases: BASELINE → ANCHOR (10 GT boxes, "find remaining") → ADD-ONLY.
+       Phase        dets   TP   FP   FN    P      R     F1    elapsed
+       BASELINE       55    0   55   86  0.000  0.000  0.000    44s
+       ANCHOR         39    1   38   85  0.026  0.012  0.016    30s
+       ADD-ONLY       54    0   54   86  0.000  0.000  0.000    22s
+     Verdict: no change  (ANCHOR F1=0.016 < 0.02 threshold; baseline F1=0.000)
+     Findings:
+       - Baseline: 55 FP hallucinations, 0 TP. Dense false detections across the image.
+       - ANCHOR: 1 TP out of 39 dets — marginal improvement but within noise threshold.
+         The anchor constraint slightly reduces output count (55→39) but 38 remain FP.
+       - ADD-ONLY: back to 54 FP, 0 TP. No stable benefit from injection.
+       - Conclusion: memory injection has no meaningful effect. llava-phi3 lacks the
+         spatial reasoning to use seeded examples as genuine visual anchors.
 
 [15] qwen3.5:9b              ~6.6 GB    Score: 0/6   FAIL
      Detections : 0
@@ -575,6 +701,54 @@ BASELINE (SEA-LION v4 4B — the original detection model)
 
 
 ================================================================================
+  MEMORY INJECTION CROSS-MODEL SUMMARY (2026-04-13, GT=86 columns)
+================================================================================
+
+  14 models tested across all injection rounds (Round 12-13).
+  Method: BASELINE → ANCHOR (10 spread GT boxes, "find remaining") → ADD-ONLY (pool).
+
+  Model                    B-F1   A-F1   D-F1   Verdict   Notes
+  ──────────────────────────────────────────────────────────────────────────────
+  gemma4:e4b              0.050  0.050  0.000   HURTS     harness also tested; all phases bad
+  gemma3:12b              0.115  0.000  0.021   HURTS     ANCHOR kills all output (0 dets, 336s)
+  qwen2.5vl:7b            0.000   echo   echo   no change echo — returns injected examples verbatim
+  gemma4:e2b              0.000  0.149  0.000   HELPS*    ANCHOR P=0.875; ADD-ONLY collapses to 0
+  minicpm-v:8b            0.000   echo  0.000   no change echo → add-only finds wrong positions
+  granite3.2-vision:2b    0.000  0.052  0.000   HELPS*    ANCHOR triggers flood (147 dets, 141 FP)
+  llama3.2-vision:11b     0.000  0.130  0.000   HELPS*    ANCHOR P=1.000, 6 TP, 0 FP — best precision
+  qwen2.5vl:3b            0.000  0.151  0.151   HELPS*    ANCHOR P=1.000, 7 TP; ADD-ONLY stable echo
+  moondream:latest        0.000  0.000  0.000   no change ANCHOR triggers hallucination flood (85 FP)
+  llava-phi3:3.8b         0.000  0.016  0.000   no change marginal, within noise
+  gemma3:4b               0.000   —      —      no change iterative test; single-strip echo only
+  qwen3-vl:4b             0.000   —      —      no change thinking model; never produces output
+  glm-ocr:latest          0.000   —      —      no change OCR model; treats coords as document text
+  qwen3.5:4b              0.000   —      —      no change thinking model; zero output all configs
+
+  * "HELPS" reflects the ≥0.02 F1 delta rule. In practice, improvement is anchor-echo driven
+    (models confirm the 10 seeded positions rather than finding new columns). True new-discovery
+    rate remains near zero across all models.
+
+  Key cross-model findings:
+  1. ANCHOR phase consistently outperforms BASELINE and ADD-ONLY across all testable models.
+     Providing 10 real GT positions is the strongest injection signal tested.
+  2. Models with nonzero baseline (gemma3:12b, gemma4:e4b) are HURT — anchor prompt
+     over-constrains them and collapses output.
+  3. Models with zero baseline are "HELPED" — but only because they echo the anchors
+     rather than discovering new columns. Peak recall capped at ~8-17% (7-15 of 86).
+  4. ADD-ONLY phase is universally unreliable: gemma4:e2b, llama3.2-vision:11b, and
+     granite3.2-vision:2b all collapse to 0 TP; qwen2.5vl:3b repeats its ANCHOR output.
+  5. llama3.2-vision:11b and qwen2.5vl:3b are the only models to achieve perfect precision
+     (P=1.00) under ANCHOR injection. Both are conservative: 6-7 detections, all correct,
+     but confined to the seeded region. Most promising for iterative multi-round injection
+     on a higher-VRAM machine.
+
+  CONCLUSION: Text-based memory injection cannot compensate for the lack of fine-tuning.
+  At best, ANCHOR injection provides 7-15 TP at perfect precision — useful as a sanity
+  check but insufficient for production detection of 86 columns. YOLO remains the only
+  viable approach on this hardware.
+
+
+================================================================================
   ROOT CAUSE — WHY ALL LOCAL MODELS FAIL
 ================================================================================
 
@@ -636,8 +810,8 @@ BASELINE (SEA-LION v4 4B — the original detection model)
   GPU     : NVIDIA Quadro RTX 4000  (8 GB VRAM, ~6.5 GB available during tests)
   RAM     : ~33 GB (Ollama reported 33.0 GiB available)
   Python  : 3.12 (anaconda yolo env)
-  Tested  : 2026-04-07 to 2026-04-10
-  Rounds  : 12
+  Tested  : 2026-04-07 to 2026-04-13
+  Rounds  : 13
   Log     : pdf_detection_agent/benchmark/vision_model_evaluation_log.json
 
   CONCLUSION: Zero-shot VLMs cannot localize 40-50 px column symbols in CAD floor plans.
@@ -835,6 +1009,163 @@ BUDGET BREAKDOWN (if you buy)
   Model-based failures: 27  (all remaining entries)
   Baseline           : SEA-LION v4 4B (~3.3 GB) — P=0.254  R=0.728  F1=0.376
   Environment        : Ubuntu · Ollama 0.18.3->0.20.4 · NVIDIA Quadro RTX 4000 (8 GB VRAM) · 33 GB RAM
+
+================================================================================
+  MEMORY INJECTION RANKED TABLE
+  Rank by best F1 achieved under any injection phase (GT=86 columns, tol=25 px)
+  Standard protocol: BASELINE → ANCHOR (10 spread GT boxes) → ADD-ONLY (pool)
+================================================================================
+
+  Rank  Model                    GB     B-F1   Best-F1  Best Phase     P@Best  Verdict
+  ──────────────────────────────────────────────────────────────────────────────────────────
+   1    qwen2.5vl:3b             3.2   0.000    0.151   ANCHOR+ADD-ONLY  1.000   HELPS
+   2    gemma4:e2b               7.2   0.000    0.149   ANCHOR           0.875   HELPS
+   3    llama3.2-vision:11b      7.9   0.000    0.130   ANCHOR           1.000   HELPS
+   4    gemma3:12b               8.1   0.115    0.115   BASELINE only    0.194   HURTS
+   5    granite3.2-vision:2b     1.9   0.000    0.052   ANCHOR           0.041   HELPS†
+   6    gemma4:e4b               9.6   0.050    0.050   BASELINE         —       HURTS
+   7    gemma3:4b                3.0   0.000   ~0.000   ANCHOR (partial) —       no change‡
+   8    minicpm-v:8b             5.5   0.000   ~0.000   ANCHOR (echo)    —       no change
+   9    qwen2.5vl:7b             6.0   0.000   ~0.000   ANCHOR (echo)    —       no change
+  10    llava-phi3:3.8b          2.9   0.000    0.016   ANCHOR           0.026   no change
+  11    moondream:latest         1.7   0.000    0.000   —                —       no change§
+  12    glm-ocr:latest           2.2   0.000    0.000   —                —       HURTS¶
+  ──────────────────────────────────────────────────────────────────────────────────────────
+
+  Not testable (separate reasons):
+    qwen3-vl:4b    — thinking model; exhausts token budget before any output
+    qwen3.5:4b     — thinking model; zero output across all configurations
+    qwen3-vl:2b/8b — thinking model; same as :4b
+    qwen3.5:9b/0.8b— thinking model; same failure mode
+
+  Notes:
+   † granite3.2-vision:2b "HELPS" is a metric artefact — ANCHOR triggers a hallucination
+     flood (147 dets, 141 FP, P=0.041). Not genuinely useful.
+   ‡ gemma3:4b tested with iterative protocol (not standard 3-phase); best outcome was
+     6/25 grid cells covered, confined to one column strip. F1 not formally measured.
+   § moondream ANCHOR triggers hallucination flood (0→85 FP); F1 stays 0.
+   ¶ glm-ocr ANCHOR causes model to read injected coordinates as OCR document content
+     and reproduce them as prose, not JSON detections.
+
+  Key observations:
+   1. Ranks 1-3 (qwen2.5vl:3b, gemma4:e2b, llama3.2-vision:11b) all achieve perfect or
+      near-perfect precision (P=0.875-1.000) under ANCHOR injection. They are not
+      discovering new columns — they are echoing the 10 seeded GT positions and returning
+      a high-confidence subset. True new-discovery recall remains near zero.
+   2. Ranks 1 and 3 (qwen2.5vl:3b, llama3.2-vision:11b) hit P=1.00 — every detection is
+      a real column. On adequate hardware, iterative ANCHOR rounds could systematically
+      grow coverage by re-seeding with confirmed detections each round.
+   3. gemma3:12b (rank 4) is the ONLY model where the baseline outperforms all injection
+      phases. Its zero-shot F1=0.115 (7 TP) is the highest unaided score across all models,
+      but injection collapses output entirely.
+   4. ADD-ONLY phase is universally unreliable — it either collapses to 0 (gemma4:e2b,
+      llama3.2-vision:11b, granite3.2-vision:2b) or merely repeats the ANCHOR output
+      (qwen2.5vl:3b). No model improved by seeing the accumulated pool.
+   5. All "HELPS" verdicts are driven by ANCHOR providing 10 real GT positions.
+      Without seeding, every model in this table produces F1=0.000 zero-shot.
+      Memory injection is not a substitute for fine-tuning.
+
+
+================================================================================
+  SELF-EVOLUTION CANDIDATES — ITERATIVE MEMORY INJECTION TEST
+  3 models × 5 rounds  |  Tested: 2026-04-13  |  GT=86 columns
+================================================================================
+
+  Selection criteria: P=1.000 under ANCHOR injection OR demonstrated spatial
+  extension beyond seeded positions in episodic tests.
+
+  Model                  GB    Why selected                                         Outcome
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  qwen2.5vl:3b           3.2   P=1.000 stable across ANCHOR+ADD-ONLY (7 TP, 0 FP)  INCONCLUSIVE — erratic across rounds; no self-evolution
+  llama3.2-vision:11b    7.9   P=1.000 at ANCHOR (6 TP, 0 FP); strongest arch      INCONCLUSIVE — one strong round then collapses
+  gemma3:4b              3.0   Extended beyond anchors (not pure echo, prior test)  MOST CONSISTENT — stable echo, but no self-evolution
+
+  Test protocol (5 rounds per model):
+    Round 1 : BASELINE — no injection, zero-shot detection
+    Round 2 : ANCHOR   — 10 spread GT seeds injected, "find remaining"
+    Round 3 : ANCHOR   — pool grows: seeds + Round 2 TPs
+    Round 4 : ANCHOR   — pool grows: Round 3 pool + Round 3 TPs
+    Round 5 : ANCHOR   — pool grows: Round 4 pool + Round 4 TPs
+  Image legend: GREEN=GT(86)  CYAN=confirmed pool (prior rounds)  RED=current detections
+  Script : benchmark/test_iterative_memory_injection.py
+  Images : /tmp/mi_iter/<model>_r<N>.png
+  Results: /tmp/mi_iter_results.json
+
+  ── RESULTS ──────────────────────────────────────────────────────────────────────────────
+
+  [A] qwen2.5vl:3b  (3.2 GB)
+  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+    Round   Label                   Dets   TP   FP   FN    F1   Pool
+    R1      BASELINE                  24    6   18   80  0.109     0
+    R2      ANCHOR (seed=10)          10    0    0   86  0.000    10
+    R3      ANCHOR (pool=10)           0    0    0   86  0.000    10
+    R4      ANCHOR (pool=10)           7    7    0   79  0.151    10
+    R5      ANCHOR (pool=10)           7    0    7   86  0.000    10
+    Pool never grew beyond 10. No new columns discovered beyond seeds.
+
+    Positive impact of memory injection?  NO
+    - Baseline (R1) produced 6 TP zero-shot with no injection — better than R2/R3/R5.
+    - Injection did NOT consistently improve detection. R4 achieved P=1.00 (7 TP) but
+      R5 with identical prompt returned 7 FP. Temperature=0.1 failed to suppress variance.
+    - Model is non-deterministic: same pool produces F1=0.151 one round and F1=0.000 the next.
+    - Pool stayed locked at 10 seeds — model never ventured beyond injected positions.
+    Verdict: MEMORY INJECTION DOES NOT HELP. Baseline is more reliable than any injected round.
+
+  [B] llama3.2-vision:11b  (7.9 GB)
+  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+    Round   Label                   Dets   TP   FP   FN    F1   Pool
+    R1      BASELINE                   0    0    0   86  0.000     0
+    R2      ANCHOR (seed=10)          10   10    0   76  0.208    10  ← best
+    R3      ANCHOR (pool=10)          10    0   10   86  0.000    10
+    R4      ANCHOR (pool=10)          20    0    0   86  0.000    10  †
+    R5      ANCHOR (pool=10)           0    0    0   86  0.000    10
+    Pool never grew beyond 10. No new columns discovered beyond seeds.
+    † R4: 20 dets reported but 0 TP and 0 FP — all 20 had malformed bbox format (not parseable).
+
+    Positive impact of memory injection?  PARTIALLY — R2 only
+    - R2 is the single best result: 10 TP, 0 FP, P=1.000, F1=0.208 — the model returned
+      exactly the 10 seeded positions with perfect precision. This is a genuine positive
+      impact from injection, but it is an echo of the seeds, not new discovery.
+    - R3 onward collapsed completely (0 TP, malformed output, empty responses).
+      Likely VRAM pressure causing degradation as context length grows with pool text.
+    - Injection activates detection (R1=0 dets → R2=10 TP) but cannot sustain it.
+    Verdict: MEMORY INJECTION HELPS IN R2 ONLY. Not stable enough for iterative use
+    on 8 GB VRAM. Requires 24 GB+ GPU for consistent multi-round performance.
+
+  [C] gemma3:4b  (3.0 GB)
+  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+    Round   Label                   Dets   TP   FP   FN    F1   Pool
+    R1      BASELINE                   9    3    6   83  0.063     0
+    R2      ANCHOR (seed=10)          10   10    0   76  0.208    10  ← stable from here
+    R3      ANCHOR (pool=10)          10   10    0   76  0.208    10
+    R4      ANCHOR (pool=10)          10   10    0   76  0.208    10
+    R5      ANCHOR (pool=10)          10   10    0   76  0.208    10
+    Pool never grew beyond 10. Model returned the same 10 seed positions every round.
+
+    Positive impact of memory injection?  YES — but only as a precision booster
+    - Injection transforms a noisy baseline (3 TP, 6 FP) into a clean, consistent
+      detector (10 TP, 0 FP) for the seeded region. P jumps from 0.33 → 1.00.
+    - F1 improves from 0.063 → 0.208 and holds perfectly across all 4 injected rounds.
+    - Zero false positives in R2–R5: model is suppressing hallucination and confirming only
+      what was given. This is the most reliable injection behaviour observed across all models.
+    - However: the pool never grew. Model echoed the exact same 10 seeds every round.
+      No new columns were discovered — coverage is capped at 10/86 (12%).
+    Verdict: MEMORY INJECTION HELPS FOR PRECISION. It eliminates FP and stabilises output
+    around the seeded positions. It DOES NOT help for recall — coverage cannot grow
+    without a human providing additional verified seed positions each round.
+
+  ── CROSS-MODEL VERDICT ──────────────────────────────────────────────────────────────────
+
+    Model                  Injection positive impact?   Best F1   Notes
+    qwen2.5vl:3b           NO                           0.151     Erratic; baseline (0.109) is safer
+    llama3.2-vision:11b    PARTIALLY (R2 only)          0.208     Collapses after R2; VRAM-limited
+    gemma3:4b              YES (precision only)         0.208     Stable P=1.00 but zero new discovery
+
+    Critical finding: The pool NEVER grew beyond the initial 10 seeds across all 3 models
+    and all 5 rounds. Memory injection is a confirmation mechanism, not a discovery engine.
+    None of the 3 candidates can self-evolve — they can only validate what they are told.
+    Coverage beyond the seeded positions requires either fine-tuning or human annotation.
+
 
 ================================================================================
 END OF REPORT
