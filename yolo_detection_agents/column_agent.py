@@ -1,149 +1,283 @@
 """
-column_agent.py — YOLOv11 column detection agent for mcc-amplify-v3.
+column_agent.py — OpenAI-vision column detection agent for mcc-amplify-v3.
 
-Uses column-detect.pt (trained on MCC structural floor plans) to detect
-structural columns.
+Drop-in replacement for the YOLO-based column detector. Keeps the
+`YOLOColumnAgent` class name and `.detect(path, page_num)` contract so the
+controller and `_parse_detections()` continue to work unchanged.
 
-Model weights:
-    yolo_detection_agents/weights/column-detect.pt
+Detection is performed by GPT-4o vision: the page is rendered at a moderate
+DPI, tiled to stay under the per-image token budget, and each tile is sent
+with a strict JSON schema asking for column bounding boxes in tile-local
+pixel space. Boxes are lifted back to full-page pixel coordinates, NMS'd,
+and returned in the canonical per-detection format.
 
-Usage:
-    from yolo_detection_agents.column_agent import YOLOColumnAgent
-
-    agent  = YOLOColumnAgent()
-    result = agent.detect("floor_plan.pdf", page_num=0)
-    # result["detections"] — list of canonical column dicts
-    # result["total_columns"] — int
+Env:
+    OPENAI_API_KEY  — preferred
+    or `openai_key.txt` at the repo root (auto-loaded as a fallback)
 """
 
 from __future__ import annotations
 
+import base64
+import io
+import json
+import os
 import sqlite3
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from PIL import Image
 
-from .base_yolo_agent import BaseYOLOAgent
+from .base_yolo_agent import render_pdf_page
 
 
-# ── Default weights path (relative to this file's directory) ──────────────────
-_WEIGHTS_DEFAULT = Path(__file__).parent / "weights" / "column-detect.pt"
+# ── Config ────────────────────────────────────────────────────────────────────
 
 _AGENT_DIR = Path(__file__).parent
 DB_PATH    = _AGENT_DIR / "detections.db"
+_REPO_ROOT = _AGENT_DIR.parent
+_KEY_FILE  = _REPO_ROOT / "openai_key.txt"
+
+_MODEL        = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
+_RENDER_DPI   = 200
+_TILE_SIZE    = 1536
+_TILE_OVERLAP = 192
+_NMS_IOU      = 0.45
+_MIN_CONF     = 0.35
+_MAX_WORKERS  = 8
 
 
-# ── YOLO class name → canonical shape mapping ─────────────────────────────────
-# Adjust if column-detect.pt uses different class names.
-# Unknown classes are kept as detections with shape="unknown".
-_CLASS_TO_SHAPE: dict[str, str] = {
-    "column": "square",  # shape/type resolved downstream by OCR
-}
+_PROMPT = (
+    "You are a structural-drawing analyser. The image is a tile from an "
+    "architectural floor plan. Identify every STRUCTURAL COLUMN visible in "
+    "this tile. Columns appear as small solid-filled (black/hatched) "
+    "rectangles or circles, typically 15–60 pixels on a side, placed on a "
+    "grid. IGNORE walls, doors, furniture, dimension text, lift shafts, "
+    "and legend symbols.\n\n"
+    "Return STRICT JSON of the form:\n"
+    '{"columns":[{"x1":..,"y1":..,"x2":..,"y2":..,'
+    '"shape":"square|round|rectangle","confidence":0.0-1.0}]}\n'
+    "Coordinates are integer pixels within THIS tile (origin top-left). "
+    "If no columns are present, return {\"columns\":[]}."
+)
 
-# Post-inference filters (calibrated from inspect_detections.ipynb at 300 DPI, 1:400 scale)
-_FINAL_CONF      = 0.90   # keep only high-confidence detections after tiling
-_MIN_SQUARENESS  = 0.70   # min(w,h)/max(w,h) — rejects lift shafts & elongated FPs
-_MIN_SIDE_PX     = 12     # px — rejects sub-pixel noise
-_MAX_SIDE_PX     = 65     # px — rejects large non-column objects
+
+def _load_api_key() -> str:
+    k = os.environ.get("OPENAI_API_KEY")
+    if k:
+        return k.strip()
+    if _KEY_FILE.exists():
+        return _KEY_FILE.read_text().strip()
+    raise RuntimeError(
+        "OpenAI API key not found. Set OPENAI_API_KEY or create openai_key.txt."
+    )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# YOLOColumnAgent
-# ══════════════════════════════════════════════════════════════════════════════
+def _nms(boxes: np.ndarray, scores: np.ndarray, iou_thr: float) -> list[int]:
+    if len(boxes) == 0:
+        return []
+    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]
+    keep: list[int] = []
+    while order.size > 0:
+        i = int(order[0])
+        keep.append(i)
+        if order.size == 1:
+            break
+        rest = order[1:]
+        xx1 = np.maximum(x1[i], x1[rest])
+        yy1 = np.maximum(y1[i], y1[rest])
+        xx2 = np.minimum(x2[i], x2[rest])
+        yy2 = np.minimum(y2[i], y2[rest])
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        iou = inter / (areas[i] + areas[rest] - inter + 1e-6)
+        order = rest[iou <= iou_thr]
+    return keep
 
-class YOLOColumnAgent(BaseYOLOAgent):
-    """
-    Per-element YOLO agent for structural column detection.
 
-    Args:
-        weights_path: Path to column-detect.pt (defaults to
-                      yolo_detection_agents/weights/column-detect.pt).
-        conf_threshold: Minimum YOLO confidence to keep a detection (default 0.35).
-        render_dpi: DPI for PDF rasterisation (default 150).
-        save_to_memory: Whether to persist results to detections.db (default True).
-    """
+class YOLOColumnAgent:
+    """OpenAI-vision drop-in replacement; keeps the YOLO class name so the
+    controller singleton (`_YOLO_AGENT = YOLOColumnAgent()`) is unchanged."""
 
     def __init__(
         self,
-        weights_path: str | Path | None = None,
-        conf_threshold: float = 0.25,
-        render_dpi: int = 300,
+        conf_threshold: float = _MIN_CONF,
+        render_dpi: int = _RENDER_DPI,
+        model: str = _MODEL,
         save_to_memory: bool = True,
+        max_tiles: int | None = None,
     ) -> None:
-        super().__init__(
-            weights_path   = weights_path or _WEIGHTS_DEFAULT,
-            conf_threshold = conf_threshold,
-            render_dpi     = render_dpi,
-        )
+        self._conf_threshold = conf_threshold
+        self._render_dpi     = render_dpi
+        self._model_name     = model
         self._save_to_memory = save_to_memory
+        self._max_tiles      = max_tiles
+        self._client: Any    = None
 
-    # ── Override detect() to add memory persistence ───────────────────────────
+    # ── Public API ────────────────────────────────────────────────────────────
 
     def detect(self, path: str | Path, page_num: int = 0) -> dict:
-        result = super().detect(path, page_num=page_num)
-        if "error" not in result and self._save_to_memory:
+        path = Path(path)
+        if not path.exists():
+            return {"error": f"File not found: {path}"}
+
+        img = (render_pdf_page(path, page_num, dpi=self._render_dpi)
+               if path.suffix.lower() == ".pdf"
+               else Image.open(path).convert("RGB"))
+        W, H = img.size
+
+        try:
+            raw, api_calls = self._run_vision(img)
+        except Exception as exc:
+            return {"error": f"OpenAI vision call failed: {exc}"}
+
+        detections = self._postprocess(raw, page_num)
+
+        for idx, det in enumerate(detections, 1):
+            det["id"] = idx
+
+        by_shape: dict[str, int] = {}
+        for d in detections:
+            by_shape[d["shape"]] = by_shape.get(d["shape"], 0) + 1
+        avg_conf = (round(sum(d["confidence"] for d in detections)
+                          / len(detections), 3)
+                    if detections else 0.0)
+
+        result = {
+            "file":          str(path),
+            "page":          page_num,
+            "image_size":    [W, H],
+            "total_columns": len(detections),
+            "detections":    detections,
+            "stats":         {"by_shape": by_shape, "avg_confidence": avg_conf},
+            "model":         self._model_name,
+            "api_calls":     api_calls,
+            "timestamp":     datetime.now().isoformat(),
+            "_page_image":   img,
+        }
+
+        if self._save_to_memory:
             try:
                 _save_to_db(result)
             except Exception as exc:
-                # Memory failure must not break the pipeline
                 result.setdefault("warnings", []).append(
                     f"Memory persistence failed: {exc}"
                 )
         return result
 
-    # ── _postprocess implementation ───────────────────────────────────────────
+    # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _postprocess(
-        self,
-        raw_detections: list[dict],
-        page_num: int,
-        img_w: int,
-        img_h: int,
-    ) -> list[dict]:
-        """
-        Convert raw YOLO boxes to canonical column dicts.
+    def _ensure_client(self) -> None:
+        if self._client is not None:
+            return
+        from openai import OpenAI
+        self._client = OpenAI(api_key=_load_api_key())
 
-        Filters applied in order (matching inspect_detections.ipynb):
-          1. Class filter  — skip ducts and non-column classes
-          2. Size filter   — 12 ≤ side ≤ 65 px  (300 DPI, 1:400 scale)
-          3. Squareness    — min/max side ≥ 0.70  (rejects lift shafts)
-          4. Confidence    — ≥ 0.90 final threshold
-          5. Spatial grid  — 5th–95th percentile + 15% margin  (removes
-                             title-block / legend false positives)
+    def _run_vision(self, img: Image.Image) -> tuple[list[dict], int]:
+        """Tile the image, call the model per tile, return (raw detections
+        in FULL-PAGE pixel coordinates, api_call_count)."""
+        self._ensure_client()
+        W, H = img.size
+        step = _TILE_SIZE - _TILE_OVERLAP
 
-        NMS is already done by torchvision inside _run_inference — not repeated here.
-        """
-        candidates: list[dict] = []
+        tiles: list[tuple[int, int, Image.Image]] = []
+        for y0 in range(0, H, step):
+            for x0 in range(0, W, step):
+                x1 = min(x0 + _TILE_SIZE, W)
+                y1 = min(y0 + _TILE_SIZE, H)
+                xa = max(0, x1 - _TILE_SIZE)
+                ya = max(0, y1 - _TILE_SIZE)
+                tiles.append((xa, ya, img.crop((xa, ya, x1, y1))))
 
-        for raw in raw_detections:
-            class_name = raw["type"].lower()
-            shape = _CLASS_TO_SHAPE.get(class_name)
-            if shape is None:
+        if self._max_tiles is not None:
+            tiles = tiles[: self._max_tiles]
+
+        def _work(item: tuple[int, int, Image.Image]) -> list[dict]:
+            xa, ya, tile = item
+            results = []
+            for c in self._call_model(tile):
+                results.append({
+                    "type":       c.get("shape", "square"),
+                    "bbox":       [c["x1"] + xa, c["y1"] + ya,
+                                   c["x2"] + xa, c["y2"] + ya],
+                    "confidence": float(c.get("confidence", 0.5)),
+                })
+            return results
+
+        out: list[dict] = []
+        workers = min(_MAX_WORKERS, max(1, len(tiles)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for tile_out in pool.map(_work, tiles):
+                out.extend(tile_out)
+        return out, len(tiles)
+
+    def _call_model(self, tile: Image.Image) -> list[dict]:
+        buf = io.BytesIO()
+        tile.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        resp = self._client.chat.completions.create(
+            model=self._model_name,
+            response_format={"type": "json_object"},
+            temperature=0,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT},
+                    {"type": "image_url",
+                     "image_url": {
+                         "url": f"data:image/png;base64,{b64}",
+                         "detail": "high",
+                     }},
+                ],
+            }],
+        )
+        txt = resp.choices[0].message.content or "{}"
+        try:
+            data = json.loads(txt)
+        except json.JSONDecodeError:
+            return []
+        cols = data.get("columns") or []
+        cleaned: list[dict] = []
+        for c in cols:
+            try:
+                cleaned.append({
+                    "x1": int(c["x1"]), "y1": int(c["y1"]),
+                    "x2": int(c["x2"]), "y2": int(c["y2"]),
+                    "shape": str(c.get("shape", "square")).lower(),
+                    "confidence": float(c.get("confidence", 0.5)),
+                })
+            except (KeyError, TypeError, ValueError):
                 continue
+        return cleaned
 
-            x1, y1, x2, y2 = raw["bbox"]
-            w, h = x2 - x1, y2 - y1
+    def _postprocess(self, raw: list[dict], page_num: int) -> list[dict]:
+        if not raw:
+            return []
+        boxes  = np.array([r["bbox"]       for r in raw], dtype=np.float32)
+        confs  = np.array([r["confidence"] for r in raw], dtype=np.float32)
+        keep   = _nms(boxes, confs, _NMS_IOU)
 
-            # Size filter
-            if not (_MIN_SIDE_PX <= w <= _MAX_SIDE_PX and
-                    _MIN_SIDE_PX <= h <= _MAX_SIDE_PX):
+        dets: list[dict] = []
+        for i in keep:
+            if confs[i] < self._conf_threshold:
                 continue
-
-            # Squareness filter
-            if min(w, h) / max(w, h) < _MIN_SQUARENESS:
-                continue
-
-            # Confidence filter
-            if raw["confidence"] < _FINAL_CONF:
-                continue
-
-            candidates.append({
+            x1, y1, x2, y2 = boxes[i].tolist()
+            raw_shape = raw[i]["type"]
+            shape = raw_shape if raw_shape in {"square", "round",
+                                               "rectangle"} else "square"
+            dets.append({
                 "bbox_page":   [x1, y1, x2, y2],
                 "shape":       shape,
-                "confidence":  round(raw["confidence"], 4),
-                "notes":       f"yolo:{class_name}",
+                "confidence":  round(float(confs[i]), 4),
+                "notes":       f"openai:{raw_shape}",
                 "tile_index":  None,
                 "page_num":    page_num,
                 "is_circular": shape == "round",
@@ -152,30 +286,11 @@ class YOLOColumnAgent(BaseYOLOAgent):
                 "diameter_mm": None,
                 "type_mark":   None,
             })
-
-        # Spatial grid filter — removes detections in title block / legend margins.
-        # Only applied when enough candidates exist to compute a stable percentile.
-        if len(candidates) > 15:
-            cx = np.array([(d["bbox_page"][0] + d["bbox_page"][2]) / 2
-                           for d in candidates])
-            cy = np.array([(d["bbox_page"][1] + d["bbox_page"][3]) / 2
-                           for d in candidates])
-            x_lo, x_hi = np.percentile(cx, 5),  np.percentile(cx, 95)
-            y_lo, y_hi = np.percentile(cy, 5),  np.percentile(cy, 95)
-            mx = (x_hi - x_lo) * 0.15   # 15 % padding to include border columns
-            my = (y_hi - y_lo) * 0.15
-            candidates = [
-                d for d in candidates
-                if (x_lo - mx <= (d["bbox_page"][0] + d["bbox_page"][2]) / 2 <= x_hi + mx
-                    and y_lo - my <= (d["bbox_page"][1] + d["bbox_page"][3]) / 2 <= y_hi + my)
-            ]
-
-        return candidates
+        return dets
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Memory persistence (same schema as pdf_detection_agent/agent.py)
-# Kept here so the rest of the agent is self-contained.
+# Memory persistence (schema unchanged from the YOLO agent)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _db() -> sqlite3.Connection:
@@ -184,62 +299,23 @@ def _db() -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE IF NOT EXISTS runs (
-            run_id     TEXT PRIMARY KEY,
-            timestamp  TEXT NOT NULL,
-            file_path  TEXT NOT NULL,
-            page_num   INTEGER NOT NULL,
-            image_w    INTEGER,
-            image_h    INTEGER,
-            total_cols INTEGER,
-            model      TEXT,
-            tiles      INTEGER
+            run_id TEXT PRIMARY KEY, timestamp TEXT NOT NULL,
+            file_path TEXT NOT NULL, page_num INTEGER NOT NULL,
+            image_w INTEGER, image_h INTEGER, total_cols INTEGER,
+            model TEXT, tiles INTEGER
         );
         CREATE TABLE IF NOT EXISTS columns (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id     TEXT NOT NULL REFERENCES runs(run_id),
-            col_id     INTEGER,
-            shape      TEXT,
-            confidence REAL,
-            notes      TEXT,
-            bbox_x1    REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
-            tile_index INTEGER,
-            page_num   INTEGER
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL REFERENCES runs(run_id),
+            col_id INTEGER, shape TEXT, confidence REAL, notes TEXT,
+            bbox_x1 REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
+            tile_index INTEGER, page_num INTEGER
         );
-        CREATE TABLE IF NOT EXISTS corrections (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            tile_hash  TEXT NOT NULL,
-            file_path  TEXT,
-            page_num   INTEGER,
-            tile_index INTEGER,
-            x_offset   INTEGER,
-            y_offset   INTEGER,
-            action     TEXT NOT NULL,
-            shape      TEXT,
-            bbox_x1    REAL, bbox_y1 REAL, bbox_x2 REAL, bbox_y2 REAL,
-            notes      TEXT,
-            timestamp  TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS tile_notes (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            tile_hash   TEXT NOT NULL,
-            file_path   TEXT,
-            page_num    INTEGER,
-            tile_index  INTEGER,
-            description TEXT,
-            timestamp   TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_col_run    ON columns(run_id);
-        CREATE INDEX IF NOT EXISTS idx_col_shape  ON columns(shape);
-        CREATE INDEX IF NOT EXISTS idx_col_conf   ON columns(confidence);
-        CREATE INDEX IF NOT EXISTS idx_run_file   ON runs(file_path);
-        CREATE INDEX IF NOT EXISTS idx_corr_hash  ON corrections(tile_hash);
-        CREATE INDEX IF NOT EXISTS idx_tnotes_hash ON tile_notes(tile_hash);
     """)
     return con
 
 
 def _save_to_db(result: dict) -> str:
-    """Persist a detect() result to detections.db; returns the new run_id."""
     run_id = str(uuid.uuid4())
     wh     = result.get("image_size", [None, None])
     con    = _db()

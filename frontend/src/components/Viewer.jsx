@@ -1,3 +1,8 @@
+// BlackHole Engine (developer.bjblackhole.com) assessment: BH is a Chinese BIM web viewer
+// that natively handles IFC and its own BHD format; GLB/GLTF 2.0 support is not documented
+// in public API references. Replacing Three.js here would require converting trimesh GLB
+// output to IFC or BHD, adding server-side conversion and a BH account/API key dependency.
+// Recommendation: keep Three.js + useGLTF until BH publishes explicit GLB web SDK support.
 import React, { Suspense, useRef, useCallback, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stage, useGLTF, Environment } from '@react-three/drei';
